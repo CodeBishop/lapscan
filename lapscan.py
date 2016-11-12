@@ -33,15 +33,36 @@ def readLSHWShort(machDict, lines):
                 machDict["hdd"].append(descField.strip())
             if deviceField == "/dev/cdrom":
                 machDict["cdDvd"].append(descField)
+
         elif classField == "display" and not displayFieldTaken:
             machDict["video"].append(descField)
             displayFieldTaken = True  # Skip further (redundant) entries about the video hardware.
+
         elif classField == "memory":
             sysMemColumn = descField.find("System Memory")
             if sysMemColumn != -1:
                 machDict["ram.total"] = descField[0:sysMemColumn - 1]
             elif descField.find("DIMM") != -1:
                 machDict["ram"].append(descField)
+
+        elif classField == "multimedia":
+            machDict["audio"].append(descField)
+
+        elif classField == "network":
+            descFieldLow = descField.lower()
+            if descField.find("ethernet") != -1:
+                machDict["network"].append(descField)
+            elif descField.find("wifi") != -1 or descField.find("wireless") != -1:
+                machDict["wifi"].append(descField)
+            else:
+                machDict["network"].append(descField)
+                machDict["wifi"].append(descField)
+
+        elif classField == "processor":
+            machDict["cpu"].append(descField)
+
+        elif classField == "system":
+            machDict["model"].append(descField)
 
 
 def printField(machDict, preface, key):
@@ -53,7 +74,7 @@ def printField(machDict, preface, key):
     elif len(machDict[key]) == 1:
         print machDict[key][0]
     else:
-        print
+        print "[                                         ]"
         for entry in machDict[key]:
             print "".ljust(FIRST_COL_WIDTH + 5) + entry
 
@@ -89,7 +110,7 @@ machDict["whenLidClosed"] = []
 
 # Get the lshw-short data and process it.
 lshwshort_lines = linesFromFile("../lapscanData/thinkpad_t61/lshw_short.out")
-lshwshortData = readLSHWShort(machDict, lshwshort_lines)
+readLSHWShort(machDict, lshwshort_lines)
 
 # Print the Build Sheet.
 print "           ",
