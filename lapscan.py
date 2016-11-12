@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-FIRST_COL_WIDTH = 15
+FIRST_COL_WIDTH = 16
 
 
 def linesFromFile(filepath):
@@ -30,7 +30,7 @@ def readLSHWShort(machDict, lines):
         # Process the data in the fields.
         if classField == "disk":
             if deviceField == "/dev/sda":
-                machDict["hdd"].append(descField)
+                machDict["hdd"].append(descField.strip())
             if deviceField == "/dev/cdrom":
                 machDict["cdDvd"].append(descField)
         elif classField == "display" and not displayFieldTaken:
@@ -46,7 +46,7 @@ def readLSHWShort(machDict, lines):
 
 def printField(machDict, preface, key):
     print preface.ljust(FIRST_COL_WIDTH),
-    if machDict[key] is None:
+    if key not in machDict:
         print "<ERROR: machDict key not found>"
     elif len(machDict[key]) == 0:
         print
@@ -55,25 +55,67 @@ def printField(machDict, preface, key):
     else:
         print
         for entry in machDict[key]:
-            print "".ljust(FIRST_COL_WIDTH) + entry
+            print "".ljust(FIRST_COL_WIDTH + 5) + entry
 
 # ***************************************************************************************
 # *******************************  START OF MAIN ****************************************
 # ***************************************************************************************
 
-# Prep the machine dictionary
+# Prep the machine dictionary.
 machDict = {}
+machDict["os"] = []
+machDict["model"] = []
+machDict["cpu"] = []
 machDict["ram"] = []
 machDict["hdd"] = []
-machDict["video"] = []
 machDict["cdDvd"] = []
-machDict["cpu"] = []
+machDict["wifi"] = []
+machDict["battery"] = []
+machDict["webcam"] = []
+machDict["bluetooth"] = []
+machDict["updates"] = []
+machDict["biosEntryKey"] = []
+machDict["video"] = []
+machDict["network"] = []
+machDict["audio"] = []
+machDict["usb"] = []
+machDict["vgaPort"] = []
+machDict["wifiOnOff"] = []
+machDict["volumeControl"] = []
+machDict["headphoneJack"] = []
+machDict["microphone"] = []
+machDict["mediaControls"] = []
+machDict["whenLidClosed"] = []
 
+# Get the lshw-short data and process it.
 lshwshort_lines = linesFromFile("../lapscanData/thinkpad_t61/lshw_short.out")
 lshwshortData = readLSHWShort(machDict, lshwshort_lines)
 
 # Print the Build Sheet.
+print "           ",
+printField(machDict, "OS", "os")
+print "           ",
+printField(machDict, "Model", "model")
 printField(machDict, "CPU", "cpu")
 printField(machDict, "RAM", "ram")
 printField(machDict, "HDD", "hdd")
+printField(machDict, "CD/DVD", "cdDvd")
+printField(machDict, "Wifi", "wifi")
+printField(machDict, "Battery", "battery")
+printField(machDict, "Webcam", "webcam")
+printField(machDict, "Bluetooth", "bluetooth")
+print
+printField(machDict, "Updates", "updates")
+printField(machDict, "BIOS entry key", "biosEntryKey")
+printField(machDict, "Video", "video")
+printField(machDict, "Network", "network")
+printField(machDict, "Audio", "audio")
+printField(machDict, "USB", "usb")
+printField(machDict, "VGA port", "vgaPort")
+printField(machDict, "Wifi on/off", "wifiOnOff")
+printField(machDict, "Volume control", "volumeControl")
+printField(machDict, "Headphone jack", "headphoneJack")
+printField(machDict, "Microphone", "microphone")
+printField(machDict, "Media controls", "mediaControls")
+printField(machDict, "When lid closed", "whenLidClosed")
 
