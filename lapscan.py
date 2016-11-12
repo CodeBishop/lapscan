@@ -2,6 +2,7 @@
 
 FIRST_COL_WIDTH = 15
 
+
 def linesFromFile(filepath):
     with open(filepath) as f:
         content = f.readlines()
