@@ -69,10 +69,11 @@ machDict["video"] = []
 machDict["cdDvd"] = []
 machDict["cpu"] = []
 
-lshwshort_lines = linesFromFile("thinkpad_t61/lshw_short.out")
+lshwshort_lines = linesFromFile("../lapscanData/thinkpad_t61/lshw_short.out")
 lshwshortData = readLSHWShort(machDict, lshwshort_lines)
 
 # Print the Build Sheet.
 printField(machDict, "CPU", "cpu")
+printField(machDict, "RAM", "ram")
 printField(machDict, "HDD", "hdd")
 
