@@ -19,6 +19,7 @@
 #       The populate(machine) method adds (value, source) pairs to a the sub-fields of a machine.
 
 import re
+import subprocess
 
 FIRST_COL_WIDTH = 16  # Character width of first column when printing a build sheet to the console..
 
@@ -46,6 +47,7 @@ class Machine:
     def __init__(self):
         # Name the fields and subfields.
         self.subfieldNames = {
+            "model": ['machine make', 'machine model'],
             "cpu": ['cpu make', 'cpu model', 'cpu ghz'],
             "ram": ['ram total', 'dimm1 size', 'dimm2 size', 'ddr', 'ram mhz'],
             "hdd": ['hdd gb', 'hdd make'],
@@ -137,9 +139,9 @@ class Machine:
 
     def printBuild(self):
         output = list()
-        buildSheetOrder = ["CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery ", "Webcam", "Bluetooth", "BIOS entry key",
-                           "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off", "Volume control",
-                           "Headphone jack", "Microphone", "Media controls", "When lid closed"]
+        buildSheetOrder = ["Model", "CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery ", "Webcam", "Bluetooth",
+                           "BIOS entry key", "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off",
+                           "Volume control", "Headphone jack", "Microphone", "Media controls", "When lid closed"]
         for fieldName in buildSheetOrder:
             output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
             output += self.rawLinesIfIncomplete(fieldName)
@@ -149,9 +151,14 @@ class Machine:
 
 
 class DataProviderLSHWShort:
-    def __init__(self):
+    def __init__(self, fileName=None):
         self.name = "lshw-short"
-        self.lines = open("../lapscanData/thinkpad_t61/lshw_short.out").readlines()
+        if fileName:
+            self.lines = open(fileName).readlines()
+        else:
+            process = subprocess.Popen("lshw -short".split(), stdout=subprocess.PIPE)
+            textOutput, _ = process.communicate()
+            self.lines = textOutput.splitlines()
 
     # Fill the given machine with raw data and subfield data.
     def populate(self, machine):
@@ -163,6 +170,9 @@ class DataProviderLSHWShort:
         classColumn = self.lines[0].find("Class")
         descColumn = self.lines[0].find("Description")
 
+        # Helper variables for skipping redundant data.
+        displayAlreadyKnown = False
+
         # Process output to add data to the machine dictionary.
         for i in range(2, len(self.lines)):
             # Extract the four fields of a lshw-short entry.
@@ -170,9 +180,6 @@ class DataProviderLSHWShort:
             deviceField = self.lines[i][deviceColumn:classColumn].strip()
             classField = self.lines[i][classColumn:descColumn].strip()
             desc = self.lines[i][descColumn:].strip()
-
-            # Helper variables for skipping redundant data.
-            displayAlreadyKnown = False
 
             # Process the data in the fields.
             if classField == "disk":
@@ -182,27 +189,27 @@ class DataProviderLSHWShort:
                     machine.addRawField("cd/dvd", desc)
 
             elif classField == "display" and not displayAlreadyKnown:
-                pass
+                machine.addRawField("Video", desc)
                 displayAlreadyKnown = True  # Skip further (redundant) entries about the video hardware.
 
             elif classField == "memory":
-                sysMemColumn = desc.find("System Memory")
-                if sysMemColumn != -1:
-                    pass
-                elif desc.find("DIMM") != -1:
-                    pass
+                if desc.find("System Memory") != -1:
+                    machine.addRawField("RAM", desc)
+                elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
+                    machine.addRawField("RAM", desc)
 
             elif classField == "multimedia":
-                pass
+                machine.addRawField("Audio", desc)
 
             elif classField == "network":
                 descLow = desc.lower()
                 if descLow.find("ethernet") != -1:
-                    pass
+                    machine.addRawField("Network", desc)
                 elif descLow.find("wifi") != -1 or descLow.find("wireless") != -1:
-                    pass
+                    machine.addRawField("Wifi", desc)
                 else:
-                    pass
+                    machine.addRawField("Network", desc)
+                    machine.addRawField("Wifi", desc)
 
             elif classField == "processor":
                 machine.addRawField("cpu", desc)
@@ -217,7 +224,7 @@ class DataProviderLSHWShort:
                 setSubfield("cpu ghz", rsub(r"[0-9]+\.[0-9]+", desc))
 
             elif classField == "system":
-                pass
+                machine.addRawField("Model", desc)
 
 
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
@@ -228,139 +235,13 @@ def rsub(reg, string):
     else:
         return ""
 
-# # Extract information from "lshw -short" output and add it to the machine dictionary.
-# def readLSHWShort(machDict, lines):
-#     # Determine the column widths from the column headers.
-#     deviceColumn = lines[0].find("Device")
-#     classColumn = lines[0].find("Class")
-#     descColumn = lines[0].find("Description")
-#
-#     # Helper variables.
-#     displayFieldTaken = False
-#
-#     # Process output to add data to the machine dictionary.
-#     for i in range(2, len(lines)):
-#         # Extract the four fields of a lshw-short entry.
-#         hwpathField = lines[i][0:deviceColumn].strip()
-#         deviceField = lines[i][deviceColumn:classColumn].strip()
-#         classField = lines[i][classColumn:descColumn].strip()
-#         descField = lines[i][descColumn:].strip()
-#
-#         # Process the data in the fields.
-#         if classField == "disk":
-#             if deviceField == "/dev/sda":
-#                 machDict["hdd"].append(descField.strip())
-#             if deviceField == "/dev/cdrom":
-#                 machDict["cdDvd"].append(descField)
-#
-#         elif classField == "display" and not displayFieldTaken:
-#             machDict["video"].append(descField)
-#             displayFieldTaken = True  # Skip further (redundant) entries about the video hardware.
-#
-#         elif classField == "memory":
-#             sysMemColumn = descField.find("System Memory")
-#             if sysMemColumn != -1:
-#                 machDict["ram.total"] = descField[0:sysMemColumn - 1]
-#             elif descField.find("DIMM") != -1:
-#                 machDict["ram"].append(descField)
-#
-#         elif classField == "multimedia":
-#             machDict["audio"].append(descField)
-#
-#         elif classField == "network":
-#             descFieldLow = descField.lower()
-#             if descFieldLow.find("ethernet") != -1:
-#                 machDict["network"].append(descField)
-#             elif descFieldLow.find("wifi") != -1 or descFieldLow.find("wireless") != -1:
-#                 machDict["wifi"].append(descField)
-#             else:
-#                 machDict["network"].append(descField)
-#                 machDict["wifi"].append(descField)
-#
-#         elif classField == "processor":
-#             machDict["cpu"].append(descField)
-#
-#         elif classField == "system":
-#             machDict["model"].append(descField)
-#
-#
-# def printField(machDict, preface, key):
-#     print preface.ljust(FIRST_COL_WIDTH),
-#     if key not in machDict:
-#         print "<ERROR: machDict key not found>"
-#     elif len(machDict[key]) == 0:
-#         print
-#     elif len(machDict[key]) == 1:
-#         print machDict[key][0]
-#     else:
-#         print "[                                         ]"
-#         for entry in machDict[key]:
-#             print "".ljust(FIRST_COL_WIDTH + 5) + entry
-
 # ***************************************************************************************
 # *******************************  START OF MAIN ****************************************
 # ***************************************************************************************
 
 machine = Machine()
+# lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")
 lshwshort = DataProviderLSHWShort()
 lshwshort.populate(machine)
 machine.printBuild()
 
-# # Prep the machine dictionary.
-# machDict = {}
-# machDict["os"] = []
-# machDict["model"] = []
-# machDict["cpu"] = []
-# machDict["ram"] = []
-# machDict["hdd"] = []
-# machDict["cdDvd"] = []
-# machDict["wifi"] = []
-# machDict["battery"] = []
-# machDict["webcam"] = []
-# machDict["bluetooth"] = []
-# machDict["updates"] = []
-# machDict["biosEntryKey"] = []
-# machDict["video"] = []
-# machDict["network"] = []
-# machDict["audio"] = []
-# machDict["usb"] = []
-# machDict["vgaPort"] = []
-# machDict["wifiOnOff"] = []
-# machDict["volumeControl"] = []
-# machDict["headphoneJack"] = []
-# machDict["microphone"] = []
-# machDict["mediaControls"] = []
-# machDict["whenLidClosed"] = []
-#
-# # Get the lshw-short data and process it.
-# lshwshort_lines = open("../lapscanData/thinkpad_t61/lshw_short.out").readlines()
-# readLSHWShort(machDict, lshwshort_lines)
-#
-# # Print the Build Sheet.
-# print "           ",
-# printField(machDict, "OS", "os")
-# print "           ",
-# printField(machDict, "Model", "model")
-# printField(machDict, "CPU", "cpu")
-# printField(machDict, "RAM", "ram")
-# printField(machDict, "HDD", "hdd")
-# printField(machDict, "CD/DVD", "cdDvd")
-# printField(machDict, "Wifi", "wifi")
-# printField(machDict, "Battery", "battery")
-# printField(machDict, "Webcam", "webcam")
-# printField(machDict, "Bluetooth", "bluetooth")
-# print
-# printField(machDict, "Updates", "updates")
-# printField(machDict, "BIOS entry key", "biosEntryKey")
-# printField(machDict, "Video", "video")
-# printField(machDict, "Network", "network")
-# printField(machDict, "Audio", "audio")
-# printField(machDict, "USB", "usb")
-# printField(machDict, "VGA port", "vgaPort")
-# printField(machDict, "Wifi on/off", "wifiOnOff")
-# printField(machDict, "Volume control", "volumeControl")
-# printField(machDict, "Headphone jack", "headphoneJack")
-# printField(machDict, "Microphone", "microphone")
-# printField(machDict, "Media controls", "mediaControls")
-# printField(machDict, "When lid closed", "whenLidClosed")
-#
