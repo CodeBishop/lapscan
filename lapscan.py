@@ -54,7 +54,7 @@ class Machine:
             "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'optical model'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
             "battery ": ['batt max', 'batt orig', 'batt percent'],
-            "webcam": ['webcam make', 'webcam model'],
+            "webcam": ['webcam description'],
             "bluetooth": ['bluetooth make', 'bluetooth model'],
             "bios entry key": ['bios key'],
             "video": ['video make', 'video model'],
@@ -118,6 +118,8 @@ class Machine:
         line = ""
         if fieldName == "cpu":
             line = s.subfield("cpu make") + " " + s.subfield("cpu model") + " @ " + s.subfield("cpu ghz") + " GHZ"
+        elif fieldName == "webcam":
+            line = s.subfield("webcam description")
         return line
 
     def fieldIsIncomplete(self, fieldName):
@@ -236,6 +238,30 @@ class DataProviderCPUFreq:
         machine.setSubfield("cpu ghz", "%.2f" % (self.output / 1000000.0), self.name)
 
 
+class DataProviderLSUSB:
+    def __init__(self, fileName=None):
+        self.name = "lsusb"
+        if fileName:
+            self.lines = open(fileName).readlines()
+        else:
+            process = subprocess.Popen("lsusb", stdout=subprocess.PIPE)
+            textOutput, _ = process.communicate()
+            self.lines = textOutput.splitlines()
+
+    def populate(self, machine):
+        # Scan the lsusb output for identifiable devices.
+        for line in self.lines:
+            if rsub("Chicony|ebcam", line) != "":
+                m = re.search("ID ....:.... ", line)
+                # substring = re.search(reg, string)
+                machine.addRawField("webcam", line[m.end():])
+                machine.setSubfield("webcam description", line[m.end():], self.name)
+                # email = "tony@tiremove_thisger.net"
+                # m = re.search("remove_this", email)
+                # print email[:m.start()] + email[m.end():]
+                # 'tony@tiger.net'
+
+
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     substring = re.search(reg, string)
@@ -249,9 +275,10 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")
+lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")  # DEBUG
 # lshwshort = DataProviderLSHWShort()
 lshwshort.populate(machine)
 DataProviderCPUFreq().populate(machine)
+DataProviderLSUSB().populate(machine)
 machine.printBuild()
 
