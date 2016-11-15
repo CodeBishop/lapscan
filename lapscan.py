@@ -65,7 +65,7 @@ class Machine:
             "wifi on/off": ['wifi ok', 'wifi toggle'],
             "volume control": ['volume ok', 'volume controls'],
             "headphone jack": ['headphone jack ok'],
-            "microphone": ['microphone ok', 'microphone description'],
+            "microphone": ['microphone ok', 'microphone jacks'],
             "media controls": ['media controls ok', 'media keys'],
             "when lid closed": ['lid closed description']
         }
@@ -116,9 +116,27 @@ class Machine:
     def field(s, fieldName):
         fieldName = s.checkAndLowerFieldName("field()", fieldName)
         fieldFormat = dict()
+        fieldFormat["model"] = "<machine make> <machine model>"
         fieldFormat["cpu"] = "<cpu make> <cpu model> @ <cpu ghz> GHZ"
         fieldFormat["ram"] = "<ram total>Gb = <dimm1 size> + <dimm2 size>Gb  DDR<ddr>  @  <ram mhz> MHZ"
+        fieldFormat["hdd"] = "<hdd gb>Gb SATA <hdd make>"
+        fieldFormat["cd/dvd"] = "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>"
+        fieldFormat["wifi"] = "<wifi make> <wifi model> 802.11 <wifi modes>"
+        fieldFormat["battery "] = "Capacity= <batt max> / <batt orig> = <batt percent>%"
         fieldFormat["webcam"] = "<webcam manufacturer>"
+        fieldFormat["bluetooth"] = "<bluetooth make> <bluetooth model>"
+        fieldFormat["bios entry key"] = "<bios key>"
+        fieldFormat["video"] = "<video make> <video model>"
+        fieldFormat["network"] = "<ethernet make> <ethernet model> Gigabit"
+        fieldFormat["audio"] = "<audio make> <audio model>"
+        fieldFormat["usb"] = "<usb left> LEFT, <usb right> RIGHT, <usb front> FRONT, <usb back> BACK"
+        fieldFormat["vga port"] = "<vga ok> <vga toggle>"
+        fieldFormat["wifi on/off"] = "<wifi ok> <wifi toggle>"
+        fieldFormat["volume control"] = "<volume ok> <volume controls>"
+        fieldFormat["headphone jack"] = "<headphone jack ok>"
+        fieldFormat["microphone"] = "<microphone ok> <microphone jacks>"
+        fieldFormat["media controls"] = "<media controls ok> <media keys>"
+        fieldFormat["when lid closed"] = "<lid closed description>"
 
         if fieldName in fieldFormat:
             line = fieldFormat[fieldName]
