@@ -21,11 +21,11 @@
 import re
 
 FIRST_COL_WIDTH = 16  # Character width of first column when printing a build sheet to the console..
-EMPTY_SUBFIELD = "____"
 
 
 class Subfield:
-    def __init__(self):
+    def __init__(self, subfieldName):
+        self.name = subfieldName
         self.data = []
 
     def addData(self, val, source):
@@ -33,10 +33,13 @@ class Subfield:
 
     def value(self):
         if len(self.data) == 0:
-            return EMPTY_SUBFIELD
+            return "<" + self.name + ">"
         else:
             val, source = self.data[0]
             return val
+
+    def isEmpty(self):
+        return len(self.data) == 0
 
 
 class Machine:
@@ -71,7 +74,7 @@ class Machine:
         for fieldName in self.subfieldNames.keys():
             self.rawFieldData[fieldName] = []
             for subfieldName in self.subfieldNames[fieldName]:
-                self.subfieldData[subfieldName] = Subfield()
+                self.subfieldData[subfieldName] = Subfield(subfieldName)
 
     def checkAndLowerFieldName(self, callingMethod, fieldName):
         fieldName = fieldName.lower()
@@ -83,7 +86,7 @@ class Machine:
 
     def checkAndLowerSubfieldName(self, callingMethod, subfieldName):
         subfieldName = subfieldName.lower()
-        if subfieldName not in self.subfieldDataData:
+        if subfieldName not in self.subfieldData:
             print 'ERROR: Machine.' + callingMethod + ' says "' + subfieldName + \
                   '" is not a recognized subfield of any field on the build sheet.'
             exit(1)
@@ -100,11 +103,11 @@ class Machine:
 
     # Return the value of a subfield or a placeholder string of "<subfield name>".
     def subfield(self, subfieldName):
-        subfieldName = self.checkAndLowerSubfieldName(subfieldName)
+        subfieldName = self.checkAndLowerSubfieldName("subfield()", subfieldName)
         return self.subfieldData[subfieldName].value()
 
     def setSubfield(self, subfieldName, value, source):
-        subfieldName = self.checkAndLowerSubfieldName(subfieldName)
+        subfieldName = self.checkAndLowerSubfieldName("setSubfield()", subfieldName)
         self.subfieldData[subfieldName].addData(value, source)
 
     # Construct a formatted field from known subfield data.
@@ -115,9 +118,31 @@ class Machine:
             line = s.subfield("cpu make") + " " + s.subfield("cpu model") + " @ " + s.subfield("cpu ghz") + " GHZ"
         return line
 
+    def fieldIsIncomplete(self, fieldName):
+        fieldName = self.checkAndLowerFieldName("fieldIsIncomplete()", fieldName)
+        for subfieldName in self.subfieldNames[fieldName]:
+            if self.subfieldData[subfieldName].isEmpty():
+                return True
+        return False
+
+    def rawLinesIfIncomplete(self, fieldName):
+        fieldName = self.checkAndLowerFieldName("rawLinesIfIncomplete()", fieldName)
+        if self.fieldIsIncomplete(fieldName):
+            rawLines = []
+            for line in self.rawFieldData[fieldName]:
+                rawLines.append("".ljust(FIRST_COL_WIDTH-9) + "raw data:   " + line)
+            return rawLines
+        else:
+            return []
+
     def printBuild(self):
         output = list()
-        output.append("CPU".ljust(FIRST_COL_WIDTH) + self.field("CPU"))
+        buildSheetOrder = ["CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery ", "Webcam", "Bluetooth", "BIOS entry key",
+                           "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off", "Volume control",
+                           "Headphone jack", "Microphone", "Media controls", "When lid closed"]
+        for fieldName in buildSheetOrder:
+            output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
+            output += self.rawLinesIfIncomplete(fieldName)
 
         for line in output:
             print line
@@ -152,9 +177,9 @@ class DataProviderLSHWShort:
             # Process the data in the fields.
             if classField == "disk":
                 if deviceField == "/dev/sda":
-                    pass
+                    machine.addRawField("hdd", desc)
                 if deviceField == "/dev/cdrom":
-                    pass
+                    machine.addRawField("cd/dvd", desc)
 
             elif classField == "display" and not displayAlreadyKnown:
                 pass
@@ -180,6 +205,7 @@ class DataProviderLSHWShort:
                     pass
 
             elif classField == "processor":
+                machine.addRawField("cpu", desc)
                 # EXAMPLE:  Intel(R) Core(TM)2 Duo CPU     T9300  @ 2.50GHz
                 setSubfield("cpu make", rsub(r"Intel|AMD", desc))
                 # substring = rsub(r"\s\S*\s*@", desc)
@@ -194,7 +220,7 @@ class DataProviderLSHWShort:
                 pass
 
 
-# Regex Substring: A simple wrapper for using regexs to pull substrings (or return "" if not found).
+# Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     substring = re.search(reg, string)
     if substring:
