@@ -53,7 +53,7 @@ class Machine:
             "hdd": ['hdd gb', 'hdd make'],
             "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'optical model'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
-            "battery ": ['batt max', 'batt orig', 'batt percent'],
+            "battery": ['batt max', 'batt orig', 'batt percent'],
             "webcam": ['webcam manufacturer'],
             "bluetooth": ['bluetooth make', 'bluetooth model'],
             "bios entry key": ['bios key'],
@@ -61,9 +61,9 @@ class Machine:
             "network": ['ethernet make', 'ethernet model'],
             "audio": ['audio make', 'audio model'],
             "usb": ['usb left', 'usb right', 'usb front', 'usb back'],
-            "vga port": ['vga ok', 'vga toggle'],
-            "wifi on/off": ['wifi ok', 'wifi toggle'],
-            "volume control": ['volume ok', 'volume controls'],
+            "vga port": ['vga ok', 'vga toggle ok', 'vga keys'],
+            "wifi on/off": ['wifi ok', 'wifi keys'],
+            "volume control": ['volume ok', 'volume keys'],
             "headphone jack": ['headphone jack ok'],
             "microphone": ['microphone ok', 'microphone jacks'],
             "media controls": ['media controls ok', 'media keys'],
@@ -122,7 +122,7 @@ class Machine:
         fieldFormat["hdd"] = "<hdd gb>Gb SATA <hdd make>"
         fieldFormat["cd/dvd"] = "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>"
         fieldFormat["wifi"] = "<wifi make> <wifi model> 802.11 <wifi modes>"
-        fieldFormat["battery "] = "Capacity= <batt max> / <batt orig> = <batt percent>%"
+        fieldFormat["battery"] = "Capacity= <batt max> / <batt orig> Wh = <batt percent>%"
         fieldFormat["webcam"] = "<webcam manufacturer>"
         fieldFormat["bluetooth"] = "<bluetooth make> <bluetooth model>"
         fieldFormat["bios entry key"] = "<bios key>"
@@ -130,9 +130,9 @@ class Machine:
         fieldFormat["network"] = "<ethernet make> <ethernet model> Gigabit"
         fieldFormat["audio"] = "<audio make> <audio model>"
         fieldFormat["usb"] = "<usb left> LEFT, <usb right> RIGHT, <usb front> FRONT, <usb back> BACK"
-        fieldFormat["vga port"] = "<vga ok> <vga toggle>"
-        fieldFormat["wifi on/off"] = "<wifi ok> <wifi toggle>"
-        fieldFormat["volume control"] = "<volume ok> <volume controls>"
+        fieldFormat["vga port"] = "<vga ok> <vga toggle ok> <vga keys>"
+        fieldFormat["wifi on/off"] = "<wifi ok> <wifi keys>"
+        fieldFormat["volume control"] = "<volume ok> <volume keys>"
         fieldFormat["headphone jack"] = "<headphone jack ok>"
         fieldFormat["microphone"] = "<microphone ok> <microphone jacks>"
         fieldFormat["media controls"] = "<media controls ok> <media keys>"
@@ -167,7 +167,7 @@ class Machine:
 
     def printBuild(self):
         output = list()
-        buildSheetOrder = ["Model", "CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery ", "Webcam", "Bluetooth",
+        buildSheetOrder = ["Model", "CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery", "Webcam", "Bluetooth",
                            "BIOS entry key", "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off",
                            "Volume control", "Headphone jack", "Microphone", "Media controls", "When lid closed"]
         for fieldName in buildSheetOrder:
@@ -283,6 +283,31 @@ class DataProviderLSUSB:
                 machine.setSubfield("webcam manufacturer", line[m.end():], self.name)
 
 
+class DataProviderUPower:
+    def __init__(self, fileName=None):
+        self.name = "upower"
+        if fileName:
+            self.lines = open(fileName).readlines()
+        else:
+            process = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE)
+            textOutput, _ = process.communicate()
+            self.lines = textOutput.splitlines()
+
+    def populate(self, machine):
+        for line in self.lines:
+            if rsub("energy-full:", line) != "":
+                m = re.search(r"\d+\.\d+", line)
+                machine.setSubfield("batt max", str(int(float(m.group(0)))), self.name)
+                machine.addRawField("battery", line)
+            elif rsub("energy-full-design:", line) != "":
+                m = re.search(r"\d+\.\d+", line)
+                machine.setSubfield("batt orig", str(int(float(m.group(0)))), self.name)
+                machine.addRawField("battery", line)
+            elif rsub("capacity:", line) != "":
+                m = re.search(r"\d+\.\d+", line)
+                machine.setSubfield("batt percent", str(int(float(m.group(0)))), self.name)
+                machine.addRawField("battery", line)
+
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     m = re.search(reg, string)
@@ -301,5 +326,8 @@ lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")  #
 lshwshort.populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
+DataProviderUPower().populate(machine)
 machine.printBuild()
 
+# DEBUG
+print "Are dmidecode, upower and acpi installed by default?"
