@@ -221,10 +221,19 @@ class DataProviderLSHWShort:
                 substring = rsub(r"(?:Intel|AMD)[\(R\)]+\s(\w+)", desc)
                 # setSubfield("cpu model", rsub(r"(?:Intel|AMD)(?:\(R\))?\s+(\w+)", desc))
                 # setSubfield("cpu model", substring)
-                setSubfield("cpu ghz", rsub(r"[0-9]+\.[0-9]+", desc))
+                # setSubfield("cpu ghz", rsub(r"[0-9]+\.[0-9]+", desc))
 
             elif classField == "system":
                 machine.addRawField("Model", desc)
+
+
+class DataProviderCPUFreq:
+    def __init__(self, fileName=None):
+        self.name = "cpufreq"
+        self.output = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
+
+    def populate(self, machine):
+        machine.setSubfield("cpu ghz", "%.2f" % (self.output / 1000000.0), self.name)
 
 
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
@@ -240,8 +249,9 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-# lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")
-lshwshort = DataProviderLSHWShort()
+lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")
+# lshwshort = DataProviderLSHWShort()
 lshwshort.populate(machine)
+DataProviderCPUFreq().populate(machine)
 machine.printBuild()
 
