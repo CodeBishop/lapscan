@@ -54,7 +54,7 @@ class Machine:
             "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'optical model'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
             "battery ": ['batt max', 'batt orig', 'batt percent'],
-            "webcam": ['webcam description'],
+            "webcam": ['webcam manufacturer'],
             "bluetooth": ['bluetooth make', 'bluetooth model'],
             "bios entry key": ['bios key'],
             "video": ['video make', 'video model'],
@@ -115,11 +115,19 @@ class Machine:
     # Construct a formatted field from known subfield data.
     def field(s, fieldName):
         fieldName = s.checkAndLowerFieldName("field()", fieldName)
-        line = ""
-        if fieldName == "cpu":
-            line = s.subfield("cpu make") + " " + s.subfield("cpu model") + " @ " + s.subfield("cpu ghz") + " GHZ"
-        elif fieldName == "webcam":
-            line = s.subfield("webcam description")
+        fieldFormat = dict()
+        fieldFormat["cpu"] = "<cpu make> <cpu model> @ <cpu ghz> GHZ"
+        fieldFormat["ram"] = "<ram total>Gb = <dimm1 size> + <dimm2 size>Gb  DDR<ddr>  @  <ram mhz> MHZ"
+        fieldFormat["webcam"] = "<webcam manufacturer>"
+
+        if fieldName in fieldFormat:
+            line = fieldFormat[fieldName]
+            subfieldNamesFound = re.findall(r"<([\w\s]+)>", fieldFormat[fieldName])
+            for subfieldName in subfieldNamesFound:
+                line = re.sub("<" + subfieldName + ">", s.subfield(subfieldName), line)
+        else:
+            line = "?"
+
         return line
 
     def fieldIsIncomplete(self, fieldName):
@@ -252,21 +260,16 @@ class DataProviderLSUSB:
         # Scan the lsusb output for identifiable devices.
         for line in self.lines:
             if rsub("Chicony|ebcam", line) != "":
-                m = re.search("ID ....:.... ", line)
-                # substring = re.search(reg, string)
+                m = re.search(r"ID ....:.... ", line)
                 machine.addRawField("webcam", line[m.end():])
-                machine.setSubfield("webcam description", line[m.end():], self.name)
-                # email = "tony@tiremove_thisger.net"
-                # m = re.search("remove_this", email)
-                # print email[:m.start()] + email[m.end():]
-                # 'tony@tiger.net'
+                machine.setSubfield("webcam manufacturer", line[m.end():], self.name)
 
 
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
-    substring = re.search(reg, string)
-    if substring:
-        return substring.group(0)
+    m = re.search(reg, string)
+    if m:
+        return m.group(0)
     else:
         return ""
 
