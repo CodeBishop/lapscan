@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+# TO DO
+#   Fix the print out so that it's not all lowercase on the field names (left-justified).
+
+
 # Terminology
 #   Field:
 #       A box on the build sheet consisting of an case-insensitive ID string and a data string. For example:
@@ -23,6 +27,22 @@ import subprocess
 
 FIRST_COL_WIDTH = 16  # Character width of first column when printing a build sheet to the console..
 
+# Color printing functions.
+def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
+def printgreen(prt): print("\033[92m {}\033[00m" .format(prt)),
+def printyellow(prt): print("\033[93m {}\033[00m" .format(prt)),
+def printmagenta(prt): print("\033[94m {}\033[00m" .format(prt)),
+def printpurple(prt): print("\033[95m {}\033[00m" .format(prt)),
+def printcyan(prt): print("\033[96m {}\033[00m" .format(prt)),
+def printgrey(prt): print("\033[97m {}\033[00m" .format(prt)),
+def redtext(txt): return "\033[91m" + txt + "\033[0m"
+def greentext(txt): return "\033[92m" + txt + "\033[0m"
+def yellowtext(txt): return "\033[93m" + txt + "\033[0m"
+def magentatext(txt): return "\033[94m" + txt + "\033[0m"
+def purpletext(txt): return "\033[95m" + txt + "\033[0m"
+def cyantext(txt): return "\033[96m" + txt + "\033[0m"
+def greytext(txt): return "\033[97m" + txt + "\033[0m"
+
 
 class Subfield:
     def __init__(self, subfieldName):
@@ -45,6 +65,9 @@ class Subfield:
 
 class Machine:
     def __init__(self):
+        # The regex describing subfield markers.
+        self.SUBFIELD_REGEX = r"<([\w\s]+)>"
+
         # Name the fields and subfields.
         self.subfieldNames = {
             "model": ['machine make', 'machine model'],
@@ -70,11 +93,36 @@ class Machine:
             "when lid closed": ['lid closed description']
         }
 
+        self.fieldFormat = {
+            "model": "<machine make> <machine model>",
+            "cpu": "<cpu make> <cpu model> @ <cpu ghz> GHZ",
+            "ram": "<ram total>Gb = <dimm1 size> + <dimm2 size>Gb  DDR<ddr>  @  <ram mhz> MHZ",
+            "hdd": "<hdd gb>Gb SATA <hdd make>",
+            "cd/dvd": "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>",
+            "wifi": "<wifi make> <wifi model> 802.11 <wifi modes>",
+            "battery": "Capacity= <batt max> / <batt orig> Wh = <batt percent>%",
+            "webcam": "<webcam manufacturer>",
+            "bluetooth": "<bluetooth make> <bluetooth model>",
+            "bios entry key": "<bios key>",
+            "video": "<video make> <video model>",
+            "network": "<ethernet make> <ethernet model> Gigabit",
+            "audio": "<audio make> <audio model>",
+            "usb": "<usb left> LEFT, <usb right> RIGHT, <usb front> FRONT, <usb back> BACK",
+            "vga port": "<vga ok> <vga toggle ok> <vga keys>",
+            "wifi on/off": "<wifi ok> <wifi keys>",
+            "volume control": "<volume ok> <volume keys>",
+            "headphone jack": "<headphone jack ok>",
+            "microphone": "<microphone ok> <microphone jacks>",
+            "media controls": "<media controls ok> <media keys>",
+            "when lid closed": "<lid closed description>"
+        }
+
+
         # Initialize the subfields and the lists of raw fields.
         self.rawFieldData = dict()
         self.subfieldData = dict()
         for fieldName in self.subfieldNames.keys():
-            self.rawFieldData[fieldName] = []
+            self.rawFieldData[fieldName.lower()] = []
             for subfieldName in self.subfieldNames[fieldName]:
                 self.subfieldData[subfieldName] = Subfield(subfieldName)
 
@@ -115,38 +163,23 @@ class Machine:
     # Construct a formatted field from known subfield data.
     def field(s, fieldName):
         fieldName = s.checkAndLowerFieldName("field()", fieldName)
-        fieldFormat = dict()
-        fieldFormat["model"] = "<machine make> <machine model>"
-        fieldFormat["cpu"] = "<cpu make> <cpu model> @ <cpu ghz> GHZ"
-        fieldFormat["ram"] = "<ram total>Gb = <dimm1 size> + <dimm2 size>Gb  DDR<ddr>  @  <ram mhz> MHZ"
-        fieldFormat["hdd"] = "<hdd gb>Gb SATA <hdd make>"
-        fieldFormat["cd/dvd"] = "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>"
-        fieldFormat["wifi"] = "<wifi make> <wifi model> 802.11 <wifi modes>"
-        fieldFormat["battery"] = "Capacity= <batt max> / <batt orig> Wh = <batt percent>%"
-        fieldFormat["webcam"] = "<webcam manufacturer>"
-        fieldFormat["bluetooth"] = "<bluetooth make> <bluetooth model>"
-        fieldFormat["bios entry key"] = "<bios key>"
-        fieldFormat["video"] = "<video make> <video model>"
-        fieldFormat["network"] = "<ethernet make> <ethernet model> Gigabit"
-        fieldFormat["audio"] = "<audio make> <audio model>"
-        fieldFormat["usb"] = "<usb left> LEFT, <usb right> RIGHT, <usb front> FRONT, <usb back> BACK"
-        fieldFormat["vga port"] = "<vga ok> <vga toggle ok> <vga keys>"
-        fieldFormat["wifi on/off"] = "<wifi ok> <wifi keys>"
-        fieldFormat["volume control"] = "<volume ok> <volume keys>"
-        fieldFormat["headphone jack"] = "<headphone jack ok>"
-        fieldFormat["microphone"] = "<microphone ok> <microphone jacks>"
-        fieldFormat["media controls"] = "<media controls ok> <media keys>"
-        fieldFormat["when lid closed"] = "<lid closed description>"
 
-        if fieldName in fieldFormat:
-            line = fieldFormat[fieldName]
-            subfieldNamesFound = re.findall(r"<([\w\s]+)>", fieldFormat[fieldName])
+        if fieldName in s.fieldFormat:
+            line = s.fieldFormat[fieldName]
+            subfieldNamesFound = re.findall(s.SUBFIELD_REGEX, s.fieldFormat[fieldName])
             for subfieldName in subfieldNamesFound:
                 line = re.sub("<" + subfieldName + ">", s.subfield(subfieldName), line)
         else:
             line = "?"
 
         return line
+
+    def fieldIsEmpty(self, fieldName):
+        fieldName = self.checkAndLowerFieldName("fieldIsIncomplete()", fieldName)
+        for subfieldName in self.subfieldNames[fieldName]:
+            if not self.subfieldData[subfieldName].isEmpty():
+                return False
+        return True
 
     def fieldIsIncomplete(self, fieldName):
         fieldName = self.checkAndLowerFieldName("fieldIsIncomplete()", fieldName)
@@ -171,7 +204,22 @@ class Machine:
                            "BIOS entry key", "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off",
                            "Volume control", "Headphone jack", "Microphone", "Media controls", "When lid closed"]
         for fieldName in buildSheetOrder:
-            output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
+            fieldName = fieldName.lower()
+            templateColor = '\033[0m'
+            foundColor = '\033[1m' + "\033[92m"
+            if self.fieldIsEmpty(fieldName):
+                output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
+            else:
+                line = foundColor + fieldName.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldName]
+                # TO DO: Write code to re-interpret
+                if fieldName in self.fieldFormat:
+                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldName])
+                    for regexMatch in regexMatchesFound:
+                        if not self.subfieldData[regexMatch].isEmpty():
+                            fieldText = foundColor + self.subfield(regexMatch) + templateColor
+                            line = re.sub("<" + regexMatch + ">", fieldText, line)
+                output.append(line)
+
             output += self.rawLinesIfIncomplete(fieldName)
 
         for line in output:
@@ -222,6 +270,7 @@ class DataProviderLSHWShort:
 
             elif classField == "memory":
                 if desc.find("System Memory") != -1:
+                    setSubfield("ram total", re.search("\d+", desc).group(0))
                     machine.addRawField("RAM", desc)
                 elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
                     machine.addRawField("RAM", desc)
@@ -243,13 +292,6 @@ class DataProviderLSHWShort:
                 machine.addRawField("cpu", desc)
                 # EXAMPLE:  Intel(R) Core(TM)2 Duo CPU     T9300  @ 2.50GHz
                 setSubfield("cpu make", rsub(r"Intel|AMD", desc))
-                # substring = rsub(r"\s\S*\s*@", desc)
-                # setSubfield("cpu model", rsub(r"\S+", substring))
-                # setSubfield("cpu type", substring)
-                substring = rsub(r"(?:Intel|AMD)[\(R\)]+\s(\w+)", desc)
-                # setSubfield("cpu model", rsub(r"(?:Intel|AMD)(?:\(R\))?\s+(\w+)", desc))
-                # setSubfield("cpu model", substring)
-                # setSubfield("cpu ghz", rsub(r"[0-9]+\.[0-9]+", desc))
 
             elif classField == "system":
                 machine.addRawField("Model", desc)
@@ -261,7 +303,7 @@ class DataProviderCPUFreq:
         self.output = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
 
     def populate(self, machine):
-        machine.setSubfield("cpu ghz", "%.2f" % (self.output / 1000000.0), self.name)
+        machine.setSubfield("cpu ghz", "%.1f" % (self.output / 1000000.0), self.name)
 
 
 class DataProviderLSUSB:
@@ -308,6 +350,8 @@ class DataProviderUPower:
                 machine.setSubfield("batt percent", str(int(float(m.group(0)))), self.name)
                 machine.addRawField("battery", line)
 
+# OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
+
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     m = re.search(reg, string)
@@ -330,4 +374,4 @@ DataProviderUPower().populate(machine)
 machine.printBuild()
 
 # DEBUG
-print "Are dmidecode, upower and acpi installed by default?"
+print "How do you get the bluetooth make and model? "
