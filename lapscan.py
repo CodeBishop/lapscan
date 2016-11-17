@@ -25,7 +25,7 @@
 import re
 import subprocess
 
-FIRST_COL_WIDTH = 16  # Character width of first column when printing a build sheet to the console..
+FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
 
 # Color printing functions.
 def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
@@ -68,7 +68,17 @@ class Machine:
         # The regex describing subfield markers.
         self.SUBFIELD_REGEX = r"<([\w\s]+)>"
 
-        # Name the fields and subfields.
+        # An array to list the fields in order of appearance and link their dictionary keys to their capitalized
+        # appearance on the build sheet.
+        self.buildSheetAppearance = [("model", "Model"), ("cpu", "CPU"), ("ram", "RAM"), ("hdd", "HDD"),
+                                ("cd/dvd", "CD/DVD"), ("wifi", "Wifi"), ("battery", "Battery"), ("webcam", "Webcam"),
+                                ("bluetooth", "Bluetooth"), ("bios entry key", "BIOS entry key"), ("video", "Video"),
+                                ("network", "Network"), ("audio", "Audio"), ("usb", "USB"), ("vga port", "VGA port"),
+                                ("wifi on/off", "Wifi on/off"), ("volume control", "Volume control"),
+                                ("headphone jack", "Headphone jack"), ("microphone", "Microphone"),
+                                ("media controls", "Media controls"), ("when lid closed", "When lid closed")]
+
+        # List the subfields and link them to their associated field.
         self.subfieldNames = {
             "model": ['machine make', 'machine model'],
             "cpu": ['cpu make', 'cpu model', 'cpu ghz'],
@@ -116,7 +126,6 @@ class Machine:
             "media controls": "<media controls ok> <media keys>",
             "when lid closed": "<lid closed description>"
         }
-
 
         # Initialize the subfields and the lists of raw fields.
         self.rawFieldData = dict()
@@ -200,27 +209,22 @@ class Machine:
 
     def printBuild(self):
         output = list()
-        buildSheetOrder = ["Model", "CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery", "Webcam", "Bluetooth",
-                           "BIOS entry key", "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off",
-                           "Volume control", "Headphone jack", "Microphone", "Media controls", "When lid closed"]
-        for fieldName in buildSheetOrder:
-            fieldName = fieldName.lower()
-            templateColor = '\033[0m'
-            foundColor = '\033[1m' + "\033[92m"
-            if self.fieldIsEmpty(fieldName):
-                output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
+        for (fieldKey, fieldAppearance) in self.buildSheetAppearance:
+            templateColor = '\033[0m'  # Grey
+            foundColor = '\033[1m' + "\033[92m"  # Green and bold.
+            if self.fieldIsEmpty(fieldKey):
+                output.append(fieldAppearance.ljust(FIRST_COL_WIDTH) + self.field(fieldKey))
             else:
-                line = foundColor + fieldName.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldName]
-                # TO DO: Write code to re-interpret
-                if fieldName in self.fieldFormat:
-                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldName])
+                line = foundColor + fieldAppearance.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldKey]
+                if fieldKey in self.fieldFormat:
+                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldKey])
                     for regexMatch in regexMatchesFound:
                         if not self.subfieldData[regexMatch].isEmpty():
                             fieldText = foundColor + self.subfield(regexMatch) + templateColor
                             line = re.sub("<" + regexMatch + ">", fieldText, line)
                 output.append(line)
 
-            output += self.rawLinesIfIncomplete(fieldName)
+            output += self.rawLinesIfIncomplete(fieldKey)
 
         for line in output:
             print line
@@ -365,13 +369,10 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")  # DEBUG
+lshwshort = DataProviderLSHWShort("testdata/lshw_short.test")  # DEBUG
 # lshwshort = DataProviderLSHWShort()
 lshwshort.populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
 DataProviderUPower().populate(machine)
 machine.printBuild()
-
-# DEBUG
-print "How do you get the bluetooth make and model? "

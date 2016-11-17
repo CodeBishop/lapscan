@@ -1,0 +1,30 @@
+H/W path     Device      Class          Description
+===================================================
+                         system         Computer
+/0                       bus            Motherboard
+/0/0                     memory         1965MiB System memory
+/0/1                     processor      Intel(R) Core(TM)2 Duo CPU     E4600  @ 2.40GHz
+/0/100                   bridge         82Q35 Express DRAM Controller
+/0/100/1                 bridge         82Q35 Express PCI Express Root Port
+/0/100/1/0               display        RV620 LE [Radeon HD 3450]
+/0/100/3                 communication  82Q35 Express MEI Controller
+/0/100/3.2               storage        82Q35 Express PT IDER Controller
+/0/100/3.3               communication  82Q35 Express Serial KT Controller
+/0/100/19    enp0s25     network        82566DM-2 Gigabit Network Connection
+/0/100/1a                bus            82801I (ICH9 Family) USB UHCI Controller #4
+/0/100/1a.1              bus            82801I (ICH9 Family) USB UHCI Controller #5
+/0/100/1a.7              bus            82801I (ICH9 Family) USB2 EHCI Controller #2
+/0/100/1b                multimedia     82801I (ICH9 Family) HD Audio Controller
+/0/100/1c                bridge         82801I (ICH9 Family) PCI Express Port 1
+/0/100/1d                bus            82801I (ICH9 Family) USB UHCI Controller #1
+/0/100/1d.1              bus            82801I (ICH9 Family) USB UHCI Controller #2
+/0/100/1d.2              bus            82801I (ICH9 Family) USB UHCI Controller #3
+/0/100/1d.7              bus            82801I (ICH9 Family) USB2 EHCI Controller #1
+/0/100/1e                bridge         82801 PCI Bridge
+/0/100/1f                bridge         82801IO (ICH9DO) LPC Interface Controller
+/0/100/1f.2              storage        82801IR/IO/IH (ICH9R/DO/DH) 4 port SATA Controller [IDE mode]
+/0/100/1f.3              bus            82801I (ICH9 Family) SMBus Controller
+/0/100/1f.5              storage        82801I (ICH9 Family) 2 port SATA Controller [IDE mode]
+/0/2         scsi1       storage        
+/0/2/0.0.0   /dev/cdrom  disk           DVD+-RW TS-H653B
+/1           native      network        Ethernet interface
