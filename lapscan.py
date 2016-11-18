@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 
 # TO DO
-#   Fix the print out so that it's not all lowercase on the field names (left-justified).
-#       The field names should be indexable by any case (getters and setters).
-#       The field names should be stored at a fixed case so they can be printed correctly.
-#           I might need a lookup table for storing the fixed case.
+#   Add the lshw Data Provider and start migrating to getting your data from it instead of lshw-short.
+
 
 # Terminology
 #   Field:
@@ -27,7 +25,7 @@
 import re
 import subprocess
 
-FIRST_COL_WIDTH = 16  # Character width of first column when printing a build sheet to the console..
+FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
 
 # Color printing functions.
 def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
@@ -70,7 +68,17 @@ class Machine:
         # The regex describing subfield markers.
         self.SUBFIELD_REGEX = r"<([\w\s]+)>"
 
-        # Name the fields and subfields.
+        # An array to list the fields in order of appearance and link their dictionary keys to their capitalized
+        # appearance on the build sheet.
+        self.buildSheetAppearance = [("model", "Model"), ("cpu", "CPU"), ("ram", "RAM"), ("hdd", "HDD"),
+                                ("cd/dvd", "CD/DVD"), ("wifi", "Wifi"), ("battery", "Battery"), ("webcam", "Webcam"),
+                                ("bluetooth", "Bluetooth"), ("bios entry key", "BIOS entry key"), ("video", "Video"),
+                                ("network", "Network"), ("audio", "Audio"), ("usb", "USB"), ("vga port", "VGA port"),
+                                ("wifi on/off", "Wifi on/off"), ("volume control", "Volume control"),
+                                ("headphone jack", "Headphone jack"), ("microphone", "Microphone"),
+                                ("media controls", "Media controls"), ("when lid closed", "When lid closed")]
+
+        # List the subfields and link them to their associated field.
         self.subfieldNames = {
             "model": ['machine make', 'machine model'],
             "cpu": ['cpu make', 'cpu model', 'cpu ghz'],
@@ -119,7 +127,6 @@ class Machine:
             "when lid closed": "<lid closed description>"
         }
 
-
         # Initialize the subfields and the lists of raw fields.
         self.rawFieldData = dict()
         self.subfieldData = dict()
@@ -128,43 +135,22 @@ class Machine:
             for subfieldName in self.subfieldNames[fieldName]:
                 self.subfieldData[subfieldName] = Subfield(subfieldName)
 
-    def checkAndLowerFieldName(self, callingMethod, fieldName):
-        fieldName = fieldName.lower()
-        if fieldName not in self.rawFieldData:
-            print 'ERROR: Machine.' + callingMethod + ' says "' + fieldName + '" is not a recognized build sheet field.'
-            exit(1)
-        else:
-            return fieldName
-
-    def checkAndLowerSubfieldName(self, callingMethod, subfieldName):
-        subfieldName = subfieldName.lower()
-        if subfieldName not in self.subfieldData:
-            print 'ERROR: Machine.' + callingMethod + ' says "' + subfieldName + \
-                  '" is not a recognized subfield of any field on the build sheet.'
-            exit(1)
-        else:
-            return subfieldName
-
     def addRawField(self, fieldName, line):
-        fieldName = self.checkAndLowerFieldName("addRawField()", fieldName)
+        # fieldName = self.checkAndLowerFieldName("addRawField()", fieldName)
         self.rawFieldData[fieldName].append(line)
 
     def rawFields(self, fieldName):
-        fieldName = self.checkAndLowerFieldName("rawFields()", fieldName)
         return self.rawFieldData[fieldName]
 
     # Return the value of a subfield or a placeholder string of "<subfield name>".
     def subfield(self, subfieldName):
-        subfieldName = self.checkAndLowerSubfieldName("subfield()", subfieldName)
         return self.subfieldData[subfieldName].value()
 
     def setSubfield(self, subfieldName, value, source):
-        subfieldName = self.checkAndLowerSubfieldName("setSubfield()", subfieldName)
         self.subfieldData[subfieldName].addData(value, source)
 
     # Construct a formatted field from known subfield data.
     def field(s, fieldName):
-        fieldName = s.checkAndLowerFieldName("field()", fieldName)
 
         if fieldName in s.fieldFormat:
             line = s.fieldFormat[fieldName]
@@ -177,21 +163,18 @@ class Machine:
         return line
 
     def fieldIsEmpty(self, fieldName):
-        fieldName = self.checkAndLowerFieldName("fieldIsIncomplete()", fieldName)
         for subfieldName in self.subfieldNames[fieldName]:
             if not self.subfieldData[subfieldName].isEmpty():
                 return False
         return True
 
     def fieldIsIncomplete(self, fieldName):
-        fieldName = self.checkAndLowerFieldName("fieldIsIncomplete()", fieldName)
         for subfieldName in self.subfieldNames[fieldName]:
             if self.subfieldData[subfieldName].isEmpty():
                 return True
         return False
 
     def rawLinesIfIncomplete(self, fieldName):
-        fieldName = self.checkAndLowerFieldName("rawLinesIfIncomplete()", fieldName)
         if self.fieldIsIncomplete(fieldName):
             rawLines = []
             for line in self.rawFieldData[fieldName]:
@@ -202,27 +185,22 @@ class Machine:
 
     def printBuild(self):
         output = list()
-        buildSheetOrder = ["Model", "CPU", "RAM", "HDD", "CD/DVD", "Wifi", "Battery", "Webcam", "Bluetooth",
-                           "BIOS entry key", "Video", "Network", "Audio", "USB", "VGA port", "Wifi on/off",
-                           "Volume control", "Headphone jack", "Microphone", "Media controls", "When lid closed"]
-        for fieldName in buildSheetOrder:
-            fieldName = fieldName.lower()
-            templateColor = '\033[0m'
-            foundColor = '\033[1m' + "\033[92m"
-            if self.fieldIsEmpty(fieldName):
-                output.append(fieldName.ljust(FIRST_COL_WIDTH) + self.field(fieldName))
+        for (fieldKey, fieldAppearance) in self.buildSheetAppearance:
+            templateColor = '\033[0m'  # Grey
+            foundColor = '\033[1m' + "\033[92m"  # Green and bold.
+            if self.fieldIsEmpty(fieldKey):
+                output.append(fieldAppearance.ljust(FIRST_COL_WIDTH) + self.field(fieldKey))
             else:
-                line = foundColor + fieldName.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldName]
-                # TO DO: Write code to re-interpret
-                if fieldName in self.fieldFormat:
-                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldName])
+                line = foundColor + fieldAppearance.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldKey]
+                if fieldKey in self.fieldFormat:
+                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldKey])
                     for regexMatch in regexMatchesFound:
                         if not self.subfieldData[regexMatch].isEmpty():
                             fieldText = foundColor + self.subfield(regexMatch) + templateColor
                             line = re.sub("<" + regexMatch + ">", fieldText, line)
                 output.append(line)
 
-            output += self.rawLinesIfIncomplete(fieldName)
+            output += self.rawLinesIfIncomplete(fieldKey)
 
         for line in output:
             print line
@@ -267,28 +245,28 @@ class DataProviderLSHWShort:
                     machine.addRawField("cd/dvd", desc)
 
             elif classField == "display" and not displayAlreadyKnown:
-                machine.addRawField("Video", desc)
+                machine.addRawField("video", desc)
                 displayAlreadyKnown = True  # Skip further (redundant) entries about the video hardware.
 
             elif classField == "memory":
                 if desc.find("System Memory") != -1:
                     setSubfield("ram total", re.search("\d+", desc).group(0))
-                    machine.addRawField("RAM", desc)
+                    machine.addRawField("ram", desc)
                 elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
-                    machine.addRawField("RAM", desc)
+                    machine.addRawField("ram", desc)
 
             elif classField == "multimedia":
-                machine.addRawField("Audio", desc)
+                machine.addRawField("audio", desc)
 
             elif classField == "network":
                 descLow = desc.lower()
                 if descLow.find("ethernet") != -1:
-                    machine.addRawField("Network", desc)
+                    machine.addRawField("network", desc)
                 elif descLow.find("wifi") != -1 or descLow.find("wireless") != -1:
-                    machine.addRawField("Wifi", desc)
+                    machine.addRawField("wifi", desc)
                 else:
-                    machine.addRawField("Network", desc)
-                    machine.addRawField("Wifi", desc)
+                    machine.addRawField("network", desc)
+                    machine.addRawField("wifi", desc)
 
             elif classField == "processor":
                 machine.addRawField("cpu", desc)
@@ -296,7 +274,7 @@ class DataProviderLSHWShort:
                 setSubfield("cpu make", rsub(r"Intel|AMD", desc))
 
             elif classField == "system":
-                machine.addRawField("Model", desc)
+                machine.addRawField("model", desc)
 
 
 class DataProviderCPUFreq:
@@ -354,6 +332,7 @@ class DataProviderUPower:
 
 # OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
 
+
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     m = re.search(reg, string)
@@ -367,13 +346,10 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-lshwshort = DataProviderLSHWShort("../lapscanData/asus_1018p/lshw_short.out")  # DEBUG
+lshwshort = DataProviderLSHWShort("testdata/lshw_short.test")  # DEBUG
 # lshwshort = DataProviderLSHWShort()
 lshwshort.populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
 DataProviderUPower().populate(machine)
 machine.printBuild()
-
-# DEBUG
-print "How do you get the bluetooth make and model? "
