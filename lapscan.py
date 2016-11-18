@@ -2,7 +2,9 @@
 
 # TO DO
 #   Fix the print out so that it's not all lowercase on the field names (left-justified).
-
+#       The field names should be indexable by any case (getters and setters).
+#       The field names should be stored at a fixed case so they can be printed correctly.
+#           I might need a lookup table for storing the fixed case.
 
 # Terminology
 #   Field:
