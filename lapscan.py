@@ -135,9 +135,9 @@ class Machine:
             for subfieldName in self.subfieldNames[fieldName]:
                 self.subfieldData[subfieldName] = Subfield(subfieldName)
 
-    def addRawField(self, fieldName, line):
+    def addRawField(self, fieldName, line, source):
         # fieldName = self.checkAndLowerFieldName("addRawField()", fieldName)
-        self.rawFieldData[fieldName].append(line)
+        self.rawFieldData[fieldName].append((line, source))
 
     def rawFields(self, fieldName):
         return self.rawFieldData[fieldName]
@@ -150,13 +150,12 @@ class Machine:
         self.subfieldData[subfieldName].addData(value, source)
 
     # Construct a formatted field from known subfield data.
-    def field(s, fieldName):
-
-        if fieldName in s.fieldFormat:
-            line = s.fieldFormat[fieldName]
-            subfieldNamesFound = re.findall(s.SUBFIELD_REGEX, s.fieldFormat[fieldName])
+    def field(self, fieldName):
+        if fieldName in self.fieldFormat:
+            line = self.fieldFormat[fieldName]
+            subfieldNamesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldName])
             for subfieldName in subfieldNamesFound:
-                line = re.sub("<" + subfieldName + ">", s.subfield(subfieldName), line)
+                line = re.sub("<" + subfieldName + ">", self.subfield(subfieldName), line)
         else:
             line = "?"
 
@@ -177,8 +176,8 @@ class Machine:
     def rawLinesIfIncomplete(self, fieldName):
         if self.fieldIsIncomplete(fieldName):
             rawLines = []
-            for line in self.rawFieldData[fieldName]:
-                rawLines.append("".ljust(FIRST_COL_WIDTH-9) + "raw data:   " + line)
+            for line, source in self.rawFieldData[fieldName]:
+                rawLines.append(source.rjust(FIRST_COL_WIDTH-2) + ": " + line)
             return rawLines
         else:
             return []
@@ -206,6 +205,20 @@ class Machine:
             print line
 
 
+class DataProviderLSHW:
+    def __init__(self, fileName=None):
+        self.name = "lshw"
+        if fileName:
+            self.data = open(fileName).read()
+        else:
+            process = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE)
+            self.data, _ = process.communicate()
+
+    def populate(self, machine):
+
+        pass
+
+
 class DataProviderLSHWShort:
     def __init__(self, fileName=None):
         self.name = "lshw-short"
@@ -231,7 +244,7 @@ class DataProviderLSHWShort:
 
         # Process output to add data to the machine dictionary.
         for i in range(2, len(self.lines)):
-            # Extract the four fields of a lshw-short entry.
+            # Extract the four fields of an lshw-short entry.
             hwpathField = self.lines[i][0:deviceColumn].strip()
             deviceField = self.lines[i][deviceColumn:classColumn].strip()
             classField = self.lines[i][classColumn:descColumn].strip()
@@ -240,41 +253,42 @@ class DataProviderLSHWShort:
             # Process the data in the fields.
             if classField == "disk":
                 if deviceField == "/dev/sda":
-                    machine.addRawField("hdd", desc)
+                    machine.addRawField("hdd", desc, self.name)
                 if deviceField == "/dev/cdrom":
-                    machine.addRawField("cd/dvd", desc)
+                    machine.addRawField("cd/dvd", desc, self.name)
 
             elif classField == "display" and not displayAlreadyKnown:
-                machine.addRawField("video", desc)
+                machine.addRawField("video", desc, self.name)
                 displayAlreadyKnown = True  # Skip further (redundant) entries about the video hardware.
 
             elif classField == "memory":
                 if desc.find("System Memory") != -1:
                     setSubfield("ram total", re.search("\d+", desc).group(0))
-                    machine.addRawField("ram", desc)
+                    print "ljkkkkkkkkkkk" + machine.subfield("ram total")
+                    machine.addRawField("ram", desc, self.name)
                 elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
-                    machine.addRawField("ram", desc)
+                    machine.addRawField("ram", desc, self.name)
 
             elif classField == "multimedia":
-                machine.addRawField("audio", desc)
+                machine.addRawField("audio", desc, self.name)
 
             elif classField == "network":
                 descLow = desc.lower()
                 if descLow.find("ethernet") != -1:
-                    machine.addRawField("network", desc)
+                    machine.addRawField("network", desc, self.name)
                 elif descLow.find("wifi") != -1 or descLow.find("wireless") != -1:
-                    machine.addRawField("wifi", desc)
+                    machine.addRawField("wifi", desc, self.name)
                 else:
-                    machine.addRawField("network", desc)
-                    machine.addRawField("wifi", desc)
+                    machine.addRawField("network", desc, self.name)
+                    machine.addRawField("wifi", desc, self.name)
 
             elif classField == "processor":
-                machine.addRawField("cpu", desc)
+                machine.addRawField("cpu", desc, self.name)
                 # EXAMPLE:  Intel(R) Core(TM)2 Duo CPU     T9300  @ 2.50GHz
                 setSubfield("cpu make", rsub(r"Intel|AMD", desc))
 
             elif classField == "system":
-                machine.addRawField("model", desc)
+                machine.addRawField("model", desc, self.name)
 
 
 class DataProviderCPUFreq:
@@ -301,7 +315,7 @@ class DataProviderLSUSB:
         for line in self.lines:
             if rsub("Chicony|ebcam", line) != "":
                 m = re.search(r"ID ....:.... ", line)
-                machine.addRawField("webcam", line[m.end():])
+                machine.addRawField("webcam", line[m.end():], self.name)
                 machine.setSubfield("webcam manufacturer", line[m.end():], self.name)
 
 
@@ -320,15 +334,15 @@ class DataProviderUPower:
             if rsub("energy-full:", line) != "":
                 m = re.search(r"\d+\.\d+", line)
                 machine.setSubfield("batt max", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line)
+                machine.addRawField("battery", line, self.name)
             elif rsub("energy-full-design:", line) != "":
                 m = re.search(r"\d+\.\d+", line)
                 machine.setSubfield("batt orig", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line)
+                machine.addRawField("battery", line, self.name)
             elif rsub("capacity:", line) != "":
                 m = re.search(r"\d+\.\d+", line)
                 machine.setSubfield("batt percent", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line)
+                machine.addRawField("battery", line, self.name)
 
 # OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
 
@@ -346,9 +360,10 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-lshwshort = DataProviderLSHWShort("testdata/lshw_short.test")  # DEBUG
-# lshwshort = DataProviderLSHWShort()
-lshwshort.populate(machine)
+DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
+# DataProviderLSHWShort().populate(machine)
+DataProviderLSHW("testdata/lshw.test").populate(machine)
+# DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
 DataProviderUPower().populate(machine)
