@@ -82,7 +82,7 @@ class Machine:
         self.subfieldNames = {
             "model": ['machine make', 'machine model'],
             "cpu": ['cpu make', 'cpu model', 'cpu ghz'],
-            "ram": ['ram total', 'dimm1 size', 'dimm2 size', 'ddr', 'ram mhz'],
+            "ram": ['ram total', 'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz'],
             "hdd": ['hdd gb', 'hdd make'],
             "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'optical model'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
@@ -106,7 +106,7 @@ class Machine:
         self.fieldFormat = {
             "model": "<machine make> <machine model>",
             "cpu": "<cpu make> <cpu model> @ <cpu ghz> GHZ",
-            "ram": "<ram total>Gb = <dimm1 size> + <dimm2 size>Gb  DDR<ddr>  @  <ram mhz> MHZ",
+            "ram": "<ram total>Gb = <dimm0 size> + <dimm1 size>Gb <ddr> @ <ram mhz> MHZ",
             "hdd": "<hdd gb>Gb SATA <hdd make>",
             "cd/dvd": "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>",
             "wifi": "<wifi make> <wifi model> 802.11 <wifi modes>",
@@ -214,9 +214,41 @@ class DataProviderLSHW:
             process = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE)
             self.data, _ = process.communicate()
 
-    def populate(self, machine):
+    if __name__ == '__main__':
+        if __name__ == '__main__':
+            def populate(self, machine):
+                def setSubfield(subfieldName, subfieldVal):
+                    machine.setSubfield(subfieldName, subfieldVal, self.name)
 
-        pass
+                # Get machine make and model by finding first mention of 'product'.
+                setSubfield("machine make", re.search(r"vendor: (\w+)", self.data).groups()[0])
+                setSubfield("machine model", re.search(r"product: ([\w ]+)", self.data).groups()[0])
+
+                # Get CPU description and save it.
+                cpuSection = self.data[re.search(r"\*-cpu", self.data).start():]
+                cpuDesc = re.search(r"product: (.*)\n", cpuSection).groups()[0]
+                machine.addRawField("cpu", cpuDesc, self.name)
+
+                # Extract CPU manufacturer from CPU description.
+                setSubfield("cpu make", re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
+
+                # Extract CPU model from CPU description by deleting unrelated substrings.
+                model = cpuDesc
+                model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
+                model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
+                model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
+                model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
+                setSubfield("cpu model", model)
+
+                # Get RAM description
+                ramSection = self.data[re.search(r"\*-memory", self.data).start():]
+                setSubfield("ram total", re.search(r"size: (\d*)", ramSection).groups()[0])
+                setSubfield("ddr", re.search(r"(DDR\d)", ramSection).groups()[0])
+                dimm0Section = self.data[re.search(r"\*-bank:0", self.data).start():]
+                setSubfield("dimm0 size", re.search(r"size: (\d*)", dimm0Section).groups()[0])
+                setSubfield("ram mhz", re.search(r"clock: (\d*)", dimm0Section).groups()[0])
+                dimm1Section = self.data[re.search(r"\*-bank:1", self.data).start():]
+                setSubfield("dimm1 size", re.search(r"size: (\d*)", dimm1Section).groups()[0])
 
 
 class DataProviderLSHWShort:
@@ -264,7 +296,6 @@ class DataProviderLSHWShort:
             elif classField == "memory":
                 if desc.find("System Memory") != -1:
                     setSubfield("ram total", re.search("\d+", desc).group(0))
-                    print "ljkkkkkkkkkkk" + machine.subfield("ram total")
                     machine.addRawField("ram", desc, self.name)
                 elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
                     machine.addRawField("ram", desc, self.name)
@@ -281,11 +312,6 @@ class DataProviderLSHWShort:
                 else:
                     machine.addRawField("network", desc, self.name)
                     machine.addRawField("wifi", desc, self.name)
-
-            elif classField == "processor":
-                machine.addRawField("cpu", desc, self.name)
-                # EXAMPLE:  Intel(R) Core(TM)2 Duo CPU     T9300  @ 2.50GHz
-                setSubfield("cpu make", rsub(r"Intel|AMD", desc))
 
             elif classField == "system":
                 machine.addRawField("model", desc, self.name)
@@ -360,9 +386,9 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
+# DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
 # DataProviderLSHWShort().populate(machine)
-DataProviderLSHW("testdata/lshw.test").populate(machine)
+DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
 # DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
