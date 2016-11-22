@@ -241,14 +241,20 @@ class DataProviderLSHW:
                 setSubfield("cpu model", model)
 
                 # Get RAM description
-                ramSection = self.data[re.search(r"\*-memory", self.data).start():]
-                setSubfield("ram total", re.search(r"size: (\d*)", ramSection).groups()[0])
-                setSubfield("ddr", re.search(r"(DDR\d)", ramSection).groups()[0])
+                ramSectionStart = self.data[re.search(r"\*-memory", self.data).start():]
+                setSubfield("ram total", re.search(r"size: (\d*)", ramSectionStart).groups()[0])
+                setSubfield("ddr", re.search(r"(DDR\d)", ramSectionStart).groups()[0])
                 dimm0Section = self.data[re.search(r"\*-bank:0", self.data).start():]
                 setSubfield("dimm0 size", re.search(r"size: (\d*)", dimm0Section).groups()[0])
                 setSubfield("ram mhz", re.search(r"clock: (\d*)", dimm0Section).groups()[0])
                 dimm1Section = self.data[re.search(r"\*-bank:1", self.data).start():]
                 setSubfield("dimm1 size", re.search(r"size: (\d*)", dimm1Section).groups()[0])
+
+                # Get HDD description.
+                hddSectionStart = self.data[re.search(r"ATA Disk", self.data).start():]
+                #searchResult = re.search(r"product: (\d*)", ramSectionStart).groups()
+                setSubfield("hdd make", re.search(r"product: ([\w ]*)", hddSectionStart).groups()[0])
+                setSubfield("hdd gb", re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
 
 
 class DataProviderLSHWShort:
