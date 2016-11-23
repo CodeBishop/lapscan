@@ -24,8 +24,10 @@
 
 import re
 import subprocess
+import sys
 
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
+COLOR_PRINTING = True
 
 # Color printing functions.
 def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
@@ -184,8 +186,11 @@ class Machine:
             return []
 
     def printBuild(self):
-        templateColor = '\033[0m'  # Grey
-        highlightColor = '\033[1m' + "\033[92m"  # Green and bold.
+        if COLOR_PRINTING:
+            templateColor = '\033[0m'  # Grey
+            highlightColor = '\033[1m' + "\033[92m"  # Green and bold.
+        else:
+            templateColor, highlightColor = '', ''
 
         # For each line on the build sheet.
         for (fieldKey, fieldAppearance) in self.buildSheetAppearance:
@@ -406,6 +411,13 @@ class DataProviderUPower:
 # OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
 
 
+def processCommandLineArguments():
+    global COLOR_PRINTING
+    for item in sys.argv[1:]:
+        if item == '-nc':
+            COLOR_PRINTING = False
+
+
 # Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
 def rsub(reg, string):
     m = re.search(reg, string)
@@ -417,7 +429,7 @@ def rsub(reg, string):
 # ***************************************************************************************
 # *******************************  START OF MAIN ****************************************
 # ***************************************************************************************
-
+processCommandLineArguments()
 machine = Machine()
 DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
 # DataProviderLSHWShort().populate(machine)
