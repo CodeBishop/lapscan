@@ -56,6 +56,7 @@ class Subfield:
         if len(self.data) == 0:
             return "<" + self.name + ">"
         else:
+            # Just return the first value filled (this might be changed later).
             val, source = self.data[0]
             return val
 
@@ -66,7 +67,7 @@ class Subfield:
 class Machine:
     def __init__(self):
         # The regex describing subfield markers.
-        self.SUBFIELD_REGEX = r"<([\w\s]+)>"
+        self.SUBFIELD_REGEX = r"<([\w\s/]+)>"
 
         # An array to list the fields in order of appearance and link their dictionary keys to their capitalized
         # appearance on the build sheet.
@@ -84,7 +85,7 @@ class Machine:
             "cpu": ['cpu make', 'cpu model', 'cpu ghz'],
             "ram": ['ram total', 'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz'],
             "hdd": ['hdd gb', 'hdd make'],
-            "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'optical model'],
+            "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'dvdram'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
             "battery": ['batt max', 'batt orig', 'batt percent'],
             "webcam": ['webcam manufacturer'],
@@ -108,7 +109,7 @@ class Machine:
             "cpu": "<cpu make> <cpu model> @ <cpu ghz> GHZ",
             "ram": "<ram total>Gb = <dimm0 size> + <dimm1 size>Gb <ddr> @ <ram mhz> MHZ",
             "hdd": "<hdd gb>Gb SATA <hdd make>",
-            "cd/dvd": "<cd r/w> <dvd r/w> <optical make> DVDRAM <optical model>",
+            "cd/dvd": "<cd r/w> <dvd r/w> <optical make> <dvdram>",
             "wifi": "<wifi make> <wifi model> 802.11 <wifi modes>",
             "battery": "Capacity= <batt max> / <batt orig> Wh = <batt percent>%",
             "webcam": "<webcam manufacturer>",
@@ -183,26 +184,32 @@ class Machine:
             return []
 
     def printBuild(self):
-        output = list()
+        templateColor = '\033[0m'  # Grey
+        highlightColor = '\033[1m' + "\033[92m"  # Green and bold.
+
+        # For each line on the build sheet.
         for (fieldKey, fieldAppearance) in self.buildSheetAppearance:
-            templateColor = '\033[0m'  # Grey
-            foundColor = '\033[1m' + "\033[92m"  # Green and bold.
+            # If the field is empty then print the fieldFormat as is.
             if self.fieldIsEmpty(fieldKey):
-                output.append(fieldAppearance.ljust(FIRST_COL_WIDTH) + self.field(fieldKey))
+                print fieldAppearance.ljust(FIRST_COL_WIDTH) + self.field(fieldKey)
+            # If the field is not empty.
             else:
-                line = foundColor + fieldAppearance.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldKey]
-                if fieldKey in self.fieldFormat:
-                    regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldKey])
-                    for regexMatch in regexMatchesFound:
-                        if not self.subfieldData[regexMatch].isEmpty():
-                            fieldText = foundColor + self.subfield(regexMatch) + templateColor
-                            line = re.sub("<" + regexMatch + ">", fieldText, line)
-                output.append(line)
+                # Print the field name highlighted.
+                line = highlightColor + fieldAppearance.ljust(FIRST_COL_WIDTH) + templateColor + self.fieldFormat[fieldKey]
 
-            output += self.rawLinesIfIncomplete(fieldKey)
+                # Find all subfields tags listed in field format.
+                regexMatchesFound = re.findall(self.SUBFIELD_REGEX, self.fieldFormat[fieldKey])
 
-        for line in output:
-            print line
+                # For each subfield mentioned.
+                for regexMatch in regexMatchesFound:
+                    # If that subfield has data then substitute it for the subfield tag.
+                    if not self.subfieldData[regexMatch].isEmpty():
+                        fieldText = highlightColor + self.subfield(regexMatch) + templateColor
+                        line = re.sub("<" + regexMatch + ">", fieldText, line)
+                print line
+
+            if self.rawLinesIfIncomplete(fieldKey):
+                print self.rawLinesIfIncomplete(fieldKey)
 
 
 class DataProviderLSHW:
@@ -214,47 +221,67 @@ class DataProviderLSHW:
             process = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE)
             self.data, _ = process.communicate()
 
-    if __name__ == '__main__':
-        if __name__ == '__main__':
-            def populate(self, machine):
-                def setSubfield(subfieldName, subfieldVal):
-                    machine.setSubfield(subfieldName, subfieldVal, self.name)
+    def populate(self, machine):
+        def setSubfield(subfieldName, subfieldVal):
+            machine.setSubfield(subfieldName, subfieldVal, self.name)
 
-                # Get machine make and model by finding first mention of 'product'.
-                setSubfield("machine make", re.search(r"vendor: (\w+)", self.data).groups()[0])
-                setSubfield("machine model", re.search(r"product: ([\w ]+)", self.data).groups()[0])
+        # Get machine make and model by finding first mention of 'product'.
+        machineMake = re.search(r"vendor: ([\w\-]+)", self.data).groups()[0]
+        setSubfield("machine make", machineMake)
+        if machineMake == "LENOVO":
+            setSubfield("machine model", re.search(r"version: ([\w ]+)", self.data).groups()[0])
+        else:
+            setSubfield("machine model", re.search(r"product: ([\w ]+)", self.data).groups()[0])
 
-                # Get CPU description and save it.
-                cpuSection = self.data[re.search(r"\*-cpu", self.data).start():]
-                cpuDesc = re.search(r"product: (.*)\n", cpuSection).groups()[0]
-                machine.addRawField("cpu", cpuDesc, self.name)
+        # Find start of LSHW section on CPU description.
+        cpuSectionStart = self.data[re.search(r"\*-cpu", self.data).start():]
 
-                # Extract CPU manufacturer from CPU description.
-                setSubfield("cpu make", re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
+        # Get CPU manufacturer.
+        cpuDesc = re.search(r"vendor: (.*)\n", cpuSectionStart).groups()[0]
+        setSubfield("cpu make", re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
 
-                # Extract CPU model from CPU description by deleting unrelated substrings.
-                model = cpuDesc
-                model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
-                model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
-                model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
-                model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
-                setSubfield("cpu model", model)
+        # Get CPU model description.
+        model = re.search(r"product: (.*)\n", cpuSectionStart).groups()[0]
+        machine.addRawField("cpu", model, self.name)
 
-                # Get RAM description
-                ramSectionStart = self.data[re.search(r"\*-memory", self.data).start():]
-                setSubfield("ram total", re.search(r"size: (\d*)", ramSectionStart).groups()[0])
-                setSubfield("ddr", re.search(r"(DDR\d)", ramSectionStart).groups()[0])
-                dimm0Section = self.data[re.search(r"\*-bank:0", self.data).start():]
-                setSubfield("dimm0 size", re.search(r"size: (\d*)", dimm0Section).groups()[0])
-                setSubfield("ram mhz", re.search(r"clock: (\d*)", dimm0Section).groups()[0])
-                dimm1Section = self.data[re.search(r"\*-bank:1", self.data).start():]
-                setSubfield("dimm1 size", re.search(r"size: (\d*)", dimm1Section).groups()[0])
+        # Extract CPU model from CPU model description by deleting undesired substrings.
+        model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
+        model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
+        model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
+        model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
+        setSubfield("cpu model", model)
 
-                # Get HDD description.
-                hddSectionStart = self.data[re.search(r"ATA Disk", self.data).start():]
-                #searchResult = re.search(r"product: (\d*)", ramSectionStart).groups()
-                setSubfield("hdd make", re.search(r"product: ([\w ]*)", hddSectionStart).groups()[0])
-                setSubfield("hdd gb", re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
+        # Get RAM description
+        ramSectionStart = self.data[re.search(r"\*-memory", self.data).start():]
+        setSubfield("ram total", re.search(r"size: (\d*)", ramSectionStart).groups()[0])
+        setSubfield("ddr", re.search(r"(DDR\d)", ramSectionStart).groups()[0])
+        dimm0Section = self.data[re.search(r"\*-bank:0", self.data).start():]
+        setSubfield("dimm0 size", re.search(r"size: (\d*)", dimm0Section).groups()[0])
+        setSubfield("ram mhz", re.search(r"clock: (\d*)", dimm0Section).groups()[0])
+        dimm1Section = self.data[re.search(r"\*-bank:1", self.data).start():]
+        setSubfield("dimm1 size", re.search(r"size: (\d*)", dimm1Section).groups()[0])
+
+        # Get HDD description.
+        hddSectionStart = self.data[re.search(r"ATA Disk", self.data).start():]
+        setSubfield("hdd make", re.search(r"product: ([\w ]*)", hddSectionStart).groups()[0])
+        setSubfield("hdd gb", re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
+
+        # Get optical drive description.
+        cdrwVal, dvdrwVal, opticalMakeVal, dvdramVal = ("", "", "", "")
+        cdromSearch = re.search(r"\*-cdrom", self.data)
+        if cdromSearch:
+            opticalSectionStart = self.data[cdromSearch.start():]
+            if re.search(r"cd-rw", opticalSectionStart):
+                cdrwVal = "CD R/W"
+            if re.search(r"dvd-r", opticalSectionStart):
+                dvdrwVal = "DVD R/W"
+            if re.search(r"dvd-ram", opticalSectionStart):
+                dvdramVal = "DVDRAM"
+            opticalMakeVal = re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0]
+        setSubfield("cd r/w", cdrwVal)
+        setSubfield("dvd r/w", dvdrwVal)
+        setSubfield("optical make", opticalMakeVal)
+        setSubfield("dvdram", dvdramVal)
 
 
 class DataProviderLSHWShort:
@@ -392,9 +419,11 @@ def rsub(reg, string):
 # ***************************************************************************************
 
 machine = Machine()
-# DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
+DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
 # DataProviderLSHWShort().populate(machine)
-DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
+# DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
+# DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
+DataProviderLSHW("../lapscanData/hp_g60/lshw.out").populate(machine)
 # DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
