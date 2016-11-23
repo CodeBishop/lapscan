@@ -52,7 +52,10 @@ class Subfield:
         self.data = []
 
     def addData(self, val, source):
-        self.data.append((val, source))
+        if val == None:
+            return
+        else:
+            self.data.append((val, source))
 
     def value(self):
         if len(self.data) == 0:
@@ -74,12 +77,12 @@ class Machine:
         # An array to list the fields in order of appearance and link their dictionary keys to their capitalized
         # appearance on the build sheet.
         self.buildSheetAppearance = [("model", "Model"), ("cpu", "CPU"), ("ram", "RAM"), ("hdd", "HDD"),
-                                ("cd/dvd", "CD/DVD"), ("wifi", "Wifi"), ("battery", "Battery"), ("webcam", "Webcam"),
-                                ("bluetooth", "Bluetooth"), ("bios entry key", "BIOS entry key"), ("video", "Video"),
-                                ("network", "Network"), ("audio", "Audio"), ("usb", "USB"), ("vga port", "VGA port"),
-                                ("wifi on/off", "Wifi on/off"), ("volume control", "Volume control"),
-                                ("headphone jack", "Headphone jack"), ("microphone", "Microphone"),
-                                ("media controls", "Media controls"), ("when lid closed", "When lid closed")]
+                                     ("cd/dvd", "CD/DVD"), ("wifi", "Wifi"), ("battery", "Battery"), ("webcam", "Webcam"),
+                                     ("bluetooth", "Bluetooth"), ("bios entry key", "BIOS entry key"), ("video", "Video"),
+                                     ("network", "Network"), ("audio", "Audio"), ("usb", "USB"), ("vga port", "VGA port"),
+                                     ("wifi on/off", "Wifi on/off"), ("volume control", "Volume control"),
+                                     ("headphone jack", "Headphone jack"), ("microphone", "Microphone"),
+                                     ("media controls", "Media controls"), ("when lid closed", "When lid closed")]
 
         # List the subfields and link them to their associated field.
         self.subfieldNames = {
@@ -113,7 +116,7 @@ class Machine:
             "hdd": "<hdd gb>Gb SATA <hdd make>",
             "cd/dvd": "<cd r/w> <dvd r/w> <optical make> <dvdram>",
             "wifi": "<wifi make> <wifi model> 802.11 <wifi modes>",
-            "battery": "Capacity= <batt max> / <batt orig> Wh = <batt percent>%",
+            "battery": "Capacity= <batt max>/<batt orig>Wh = <batt percent>%",
             "webcam": "<webcam manufacturer>",
             "bluetooth": "<bluetooth make> <bluetooth model>",
             "bios entry key": "<bios key>",
@@ -272,21 +275,18 @@ class DataProviderLSHW:
         setSubfield("hdd gb", re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
 
         # Get optical drive description.
-        cdrwVal, dvdrwVal, opticalMakeVal, dvdramVal = ("", "", "", "")
         cdromSearch = re.search(r"\*-cdrom", self.data)
         if cdromSearch:
             opticalSectionStart = self.data[cdromSearch.start():]
             if re.search(r"cd-rw", opticalSectionStart):
-                cdrwVal = "CD R/W"
+                setSubfield("cd r/w", "CD R/W")
             if re.search(r"dvd-r", opticalSectionStart):
-                dvdrwVal = "DVD R/W"
+                setSubfield("dvd r/w", "DVD R/W")
             if re.search(r"dvd-ram", opticalSectionStart):
-                dvdramVal = "DVDRAM"
-            opticalMakeVal = re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0]
-        setSubfield("cd r/w", cdrwVal)
-        setSubfield("dvd r/w", dvdrwVal)
-        setSubfield("optical make", opticalMakeVal)
-        setSubfield("dvdram", dvdramVal)
+                setSubfield("dvdram", "DVDRAM")
+            setSubfield("optical make", re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
+
+        # wifiSectionStart = re.search(r"Wireless interface")
 
 
 class DataProviderLSHWShort:
@@ -331,13 +331,6 @@ class DataProviderLSHWShort:
                 machine.addRawField("video", desc, self.name)
                 displayAlreadyKnown = True  # Skip further (redundant) entries about the video hardware.
 
-            elif classField == "memory":
-                if desc.find("System Memory") != -1:
-                    setSubfield("ram total", re.search("\d+", desc).group(0))
-                    machine.addRawField("ram", desc, self.name)
-                elif desc.find("DIMM") != -1 and desc.find("GiB") != -1:
-                    machine.addRawField("ram", desc, self.name)
-
             elif classField == "multimedia":
                 machine.addRawField("audio", desc, self.name)
 
@@ -377,36 +370,25 @@ class DataProviderLSUSB:
     def populate(self, machine):
         # Scan the lsusb output for identifiable devices.
         for line in self.lines:
-            if rsub("Chicony|ebcam", line) != "":
+            if regGet("Chicony|ebcam", line) != "":
                 m = re.search(r"ID ....:.... ", line)
                 machine.addRawField("webcam", line[m.end():], self.name)
                 machine.setSubfield("webcam manufacturer", line[m.end():], self.name)
 
 
 class DataProviderUPower:
-    def __init__(self, fileName=None):
+    def __init__(self):
         self.name = "upower"
-        if fileName:
-            self.lines = open(fileName).readlines()
-        else:
-            process = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE)
-            textOutput, _ = process.communicate()
-            self.lines = textOutput.splitlines()
+        process = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE)
+        self.data, _ = process.communicate()
 
     def populate(self, machine):
-        for line in self.lines:
-            if rsub("energy-full:", line) != "":
-                m = re.search(r"\d+\.\d+", line)
-                machine.setSubfield("batt max", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line, self.name)
-            elif rsub("energy-full-design:", line) != "":
-                m = re.search(r"\d+\.\d+", line)
-                machine.setSubfield("batt orig", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line, self.name)
-            elif rsub("capacity:", line) != "":
-                m = re.search(r"\d+\.\d+", line)
-                machine.setSubfield("batt percent", str(int(float(m.group(0)))), self.name)
-                machine.addRawField("battery", line, self.name)
+        battMax = re.search(r"energy-full:\s*(\d+)\.", self.data).groups()[0]
+        machine.setSubfield("batt max", battMax, self.name)
+        battOrig = re.search(r"energy-full-design:\s*(\d+)\.", self.data).groups()[0]
+        machine.setSubfield("batt orig", battOrig, self.name)
+        battPercent = re.search(r"capacity:\s*(\d+)\.", self.data).groups()[0]
+        machine.setSubfield("batt percent", battPercent, self.name)
 
 # OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
 
@@ -418,11 +400,19 @@ def processCommandLineArguments():
             COLOR_PRINTING = False
 
 
-# Regex Substring: A simple wrapper to extract the first substring a regex matches (or return "" if not found).
-def rsub(reg, string):
+# Regex Substring: A simple wrapper to extract the first substring a regex matches or None if not found.
+def regGet(reg, string):
     m = re.search(reg, string)
     if m:
         return m.group(0)
+    else:
+        return None
+
+
+def rsub(reg, string):
+    m = re.search(reg, string)
+    if m:
+        return m.groups()[0]
     else:
         return ""
 
@@ -431,11 +421,11 @@ def rsub(reg, string):
 # ***************************************************************************************
 processCommandLineArguments()
 machine = Machine()
-DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
+# DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
 # DataProviderLSHWShort().populate(machine)
 # DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
-# DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
-DataProviderLSHW("../lapscanData/hp_g60/lshw.out").populate(machine)
+DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
+# DataProviderLSHW("../lapscanData/hp_g60/lshw.out").populate(machine)
 # DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
