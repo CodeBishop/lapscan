@@ -25,6 +25,7 @@
 import re
 import subprocess
 import sys
+import os
 
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
 COLOR_PRINTING = True
@@ -419,14 +420,18 @@ def rsub(reg, string):
 # ***************************************************************************************
 # *******************************  START OF MAIN ****************************************
 # ***************************************************************************************
+if os.geteuid() != 0:
+    print "This program requires root privilege to run correctly. Use sudo.\n"
+    exit(1)
+
 processCommandLineArguments()
 machine = Machine()
 # DataProviderLSHWShort("testdata/lshw_short.test").populate(machine)  # DEBUG
 # DataProviderLSHWShort().populate(machine)
 # DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
-DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
+# DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
 # DataProviderLSHW("../lapscanData/hp_g60/lshw.out").populate(machine)
-# DataProviderLSHW().populate(machine)
+DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
 DataProviderLSUSB().populate(machine)
 DataProviderUPower().populate(machine)
