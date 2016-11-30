@@ -93,7 +93,7 @@ class Machine:
             "hdd": ['hdd gb', 'hdd make'],
             "cd/dvd": ['cd r/w', 'dvd r/w', 'optical make', 'dvdram'],
             "wifi": ['wifi make', 'wifi model', 'wifi modes'],
-            "battery": ['batt max', 'batt orig', 'batt percent'],
+            "battery": ['batt present', 'batt max', 'batt orig', 'batt percent'],
             "webcam": ['webcam manufacturer'],
             "bluetooth": ['bluetooth make', 'bluetooth model'],
             "bios entry key": ['bios key'],
@@ -198,9 +198,15 @@ class Machine:
 
         # For each line on the build sheet.
         for (fieldKey, fieldAppearance) in self.buildSheetAppearance:
+            # Check for special cases of field presentation.
+            if fieldKey == "battery" and not self.subfieldData["batt present"].isEmpty():
+                print fieldAppearance.ljust(FIRST_COL_WIDTH) + highlightColor +\
+                      self.subfield("batt present") + templateColor
+
             # If the field is empty then print the fieldFormat as is.
-            if self.fieldIsEmpty(fieldKey):
+            elif self.fieldIsEmpty(fieldKey):
                 print fieldAppearance.ljust(FIRST_COL_WIDTH) + self.field(fieldKey)
+
             # If the field is not empty.
             else:
                 # Print the field name highlighted.
@@ -362,19 +368,22 @@ class DataProviderLSUSB:
     def __init__(self, fileName=None):
         self.name = "lsusb"
         if fileName:
-            self.lines = open(fileName).readlines()
+            self.data = open(fileName).read()
         else:
             process = subprocess.Popen("lsusb", stdout=subprocess.PIPE)
-            textOutput, _ = process.communicate()
-            self.lines = textOutput.splitlines()
+            self.data, _ = process.communicate()
 
     def populate(self, machine):
         # Scan the lsusb output for identifiable devices.
-        for line in self.lines:
-            if regGet("Chicony|ebcam", line) != "":
-                m = re.search(r"ID ....:.... ", line)
-                machine.addRawField("webcam", line[m.end():], self.name)
-                machine.setSubfield("webcam manufacturer", line[m.end():], self.name)
+        if re.search("Chicony", self.data):
+            machine.setSubfield("webcam manufacturer", "Chicony", self.name)
+        else:
+            webcamLine = regGetWholeLine("ebcam", self.data)
+            if webcamLine != "":
+                webcamInfo = rmatch(re.search("ID ....:.... (.*)$", webcamLine))
+                machine.setSubfield("webcam manufacturer", webcamInfo, self.name)
+            else:
+                machine.setSubfield("webcam manufacturer", "(not present)", self.name)
 
 
 class DataProviderUPower:
@@ -384,14 +393,17 @@ class DataProviderUPower:
         self.data, _ = process.communicate()
 
     def populate(self, machine):
-        battMax = re.search(r"energy-full:\s*(\d+)\.", self.data).groups()[0]
-        machine.setSubfield("batt max", battMax, self.name)
-        battOrig = re.search(r"energy-full-design:\s*(\d+)\.", self.data).groups()[0]
-        machine.setSubfield("batt orig", battOrig, self.name)
-        battPercent = re.search(r"capacity:\s*(\d+)\.", self.data).groups()[0]
-        machine.setSubfield("batt percent", battPercent, self.name)
+        if re.search("power supply.*no", self.data):
+            machine.setSubfield("batt present", "(no battery found)", self.data)
+        else:
+            battMax = rmatch(re.search(r"energy-full:\s*(\d+)\.", self.data))
+            machine.setSubfield("batt max", battMax, self.name)
+            battOrig = rmatch(re.search(r"energy-full-design:\s*(\d+)\.", self.data))
+            machine.setSubfield("batt orig", battOrig, self.name)
+            battPercent = rmatch(re.search(r"capacity:\s*(\d+)\.", self.data))
+            machine.setSubfield("batt percent", battPercent, self.name)
 
-# OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, lsusb
+# DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys
 
 
 def processCommandLineArguments():
@@ -401,13 +413,22 @@ def processCommandLineArguments():
             COLOR_PRINTING = False
 
 
-# Regex Substring: A simple wrapper to extract the first substring a regex matches or None if not found.
-def regGet(reg, string):
-    m = re.search(reg, string)
-    if m:
-        return m.group(0)
+# Return the first capture group from regex Match object if a match was found.
+def rmatch(match):
+    if match:
+        return match.groups()[0]
     else:
-        return None
+        return ""  # Return empty string if no match was found.
+
+
+# Return the entire line where the first regex match was found if it was found.
+def regGetWholeLine(reg, textData):
+    lines = textData.splitlines()
+    for line in lines:
+        if re.search(reg, line):
+            return line
+
+    return ""  # Return empty string if regex never matched anything.
 
 
 def rsub(reg, string):
@@ -431,8 +452,9 @@ machine = Machine()
 # DataProviderLSHW("testdata/lshwzenbook.test").populate(machine)
 # DataProviderLSHW("testdata/lshwthinkpadr400.test").populate(machine)
 # DataProviderLSHW("../lapscanData/hp_g60/lshw.out").populate(machine)
-DataProviderLSHW().populate(machine)
+# DataProviderLSHW().populate(machine)
 DataProviderCPUFreq().populate(machine)
-DataProviderLSUSB().populate(machine)
+# DataProviderLSUSB().populate(machine)
+DataProviderLSUSB("testdata/lsusb_chicony.out").populate(machine)
 DataProviderUPower().populate(machine)
 machine.printBuild()
