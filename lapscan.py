@@ -28,24 +28,25 @@ import sys
 import os
 
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
-COLOR_PRINTING = True
+COLOR_TO_USE = '\033[1m'
+COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
 
-# Color printing functions.
-def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
-def printgreen(prt): print("\033[92m {}\033[00m" .format(prt)),
-def printyellow(prt): print("\033[93m {}\033[00m" .format(prt)),
-def printmagenta(prt): print("\033[94m {}\033[00m" .format(prt)),
-def printpurple(prt): print("\033[95m {}\033[00m" .format(prt)),
-def printcyan(prt): print("\033[96m {}\033[00m" .format(prt)),
-def printgrey(prt): print("\033[97m {}\033[00m" .format(prt)),
-def redtext(txt): return "\033[91m" + txt + "\033[0m"
-def greentext(txt): return "\033[92m" + txt + "\033[0m"
-def yellowtext(txt): return "\033[93m" + txt + "\033[0m"
-def magentatext(txt): return "\033[94m" + txt + "\033[0m"
-def purpletext(txt): return "\033[95m" + txt + "\033[0m"
-def cyantext(txt): return "\033[96m" + txt + "\033[0m"
-def greytext(txt): return "\033[97m" + txt + "\033[0m"
+# Color printing functions. DEBUG: THESE CAN BE DELETED.
+# def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
+# def printgreen(prt): print("\033[92m {}\033[00m" .format(prt)),
+# def printyellow(prt): print("\033[93m {}\033[00m" .format(prt)),
+# def printmagenta(prt): print("\033[94m {}\033[00m" .format(prt)),
+# def printpurple(prt): print("\033[95m {}\033[00m" .format(prt)),
+# def printcyan(prt): print("\033[96m {}\033[00m" .format(prt)),
+# def printgrey(prt): print("\033[97m {}\033[00m" .format(prt)),
+# def redtext(txt): return "\033[91m" + txt + "\033[0m"
+# def greentext(txt): return "\033[92m" + txt + "\033[0m"
+# def yellowtext(txt): return "\033[93m" + txt + "\033[0m"
+# def magentatext(txt): return "\033[94m" + txt + "\033[0m"
+# def purpletext(txt): return "\033[95m" + txt + "\033[0m"
+# def cyantext(txt): return "\033[96m" + txt + "\033[0m"
+# def greytext(txt): return "\033[97m" + txt + "\033[0m"
 
 
 class Field:
@@ -80,8 +81,7 @@ fieldNames = 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz'
 
 
 def printBuildSheet(mach):
-    if COLOR_PRINTING:
-        sys.stdout.write('\033[1m')
+    sys.stdout.write(COLOR_TO_USE)
 
     # Construct the strings that describe the machine in VCN Build Sheet format.
     modelDescription = mach['machine make'].value() + ' ' + mach['machine model'].value()
@@ -99,25 +99,28 @@ def printBuildSheet(mach):
         + mach['dimm1 size'].value() + "Gb " + mach['ddr'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
 
     # DEBUG: This should be confirming SATA is the connection method.
-    hddDescription = mach['hdd gb'].value() + 'Gb ' + mach['hdd make'].value() + ' '
+    hddDescription = mach['hdd gb'].value() + 'Gb '
     if mach['hdd connector'].status() == FIELD_HAS_DATA:
         hddDescription += mach['hdd connector'].value() + ' '
-    hddDescription += mach['hdd model'].value()
+    hddDescription += mach['hdd make'].value() + ' ' + mach['hdd model'].value()
 
-    opticalDescription = ''
-    if mach['cd type'].status() == FIELD_HAS_DATA:
-        opticalDescription += mach['cd type'].value() + ' '
-    if mach['dvd type'].status() == FIELD_HAS_DATA:
-        opticalDescription += mach['dvd type'].value() + ' '
-    opticalDescription += mach['optical make'].value() + ' '
-    if mach['dvdram'].status() == FIELD_HAS_DATA:
-        opticalDescription += mach['dvdram'].value() + ' '
+    if mach['optical make'].status() == FIELD_NO_DATA_FOUND:
+        opticalDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+    else:
+        opticalDescription = ''
+        if mach['cd type'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['cd type'].value() + ' '
+        if mach['dvd type'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['dvd type'].value() + ' '
+        opticalDescription += mach['optical make'].value() + ' '
+        if mach['dvdram'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['dvdram'].value() + ' '
 
     if mach['wifi make'].status() == FIELD_HAS_DATA:
         wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + ' 802.11 ' \
             + mach['wifi modes'].value()
     else:
-        wifiDescription = 'not found'
+        wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     if mach['batt max'].status() == FIELD_HAS_DATA:
         batteryDescription = 'Capacity= ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
@@ -128,30 +131,30 @@ def printBuildSheet(mach):
     if mach['webcam make'].status() == FIELD_HAS_DATA:
         webcamDescription = mach['webcam make'].value()
     else:
-        webcamDescription = 'not found'
+        webcamDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     if mach['bluetooth make'].status() == FIELD_HAS_DATA:
         bluetoothDescription = mach['bluetooth make'].value() + ' ' + mach['bluetooth model'].value()
     else:
-        bluetoothDescription = 'not found'
+        bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     biosEntryKeyDescription = mach['bios key'].value()
 
     if mach['video make'].status() == FIELD_HAS_DATA:
         videoDescription = mach['video make'].value() + ' ' + mach['video model'].value()
     else:
-        videoDescription = 'not found'
+        videoDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     # DEBUG: This should confirm Gigabit.
     if mach['ethernet make'].status() == FIELD_HAS_DATA:
         ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value() + ' Gigabit'
     else:
-        ethernetDescription = 'not found'
+        ethernetDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     if mach['audio make'].status() == FIELD_HAS_DATA:
         audioDescription = mach['audio make'].value() + ' ' + mach['audio model'].value()
     else:
-        audioDescription = 'not found'
+        audioDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     usbDescription = '<#> LEFT, <#> RIGHT, <#> FRONT, <#> BACK'
     vgaPortDescription = '<vga ok> <vga toggle ok> <vga keys>'
@@ -176,6 +179,7 @@ def printBuildSheet(mach):
     print "Video".ljust(FIRST_COL_WIDTH) + videoDescription
     print "Network".ljust(FIRST_COL_WIDTH) + ethernetDescription
     print "Audio".ljust(FIRST_COL_WIDTH) + audioDescription
+    sys.stdout.write(COLOR_TO_REVERT_TO)
     print "USB".ljust(FIRST_COL_WIDTH) + usbDescription
     print "VGA port".ljust(FIRST_COL_WIDTH) + vgaPortDescription
     print "Wifi on/off".ljust(FIRST_COL_WIDTH) + wifiOnOffDescription
@@ -186,22 +190,19 @@ def printBuildSheet(mach):
     print "When lid closed".ljust(FIRST_COL_WIDTH) + lidActionDescription
     print
 
-    if COLOR_PRINTING:
-        sys.stdout.write('\033[0m')
-        sys.stdout.flush()
 
-
-def processCommandLineArguments():
-    global COLOR_PRINTING
-    for item in sys.argv[1:]:
-        if item == '-nc':
-            COLOR_PRINTING = False
+# def processCommandLineArguments():
+#     for item in sys.argv[1:]:
+#         if item == '-nc':
+#             COLOR_PRINTING = False
 
 
 # Read and interpret lshw output.
-def readLSHW(machine):
-    lshwData = open("testdata/lshw.test").read()
-    # lshwData = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  #DEBUG
+def readLSHW(machine, testFile = None):
+    if testFile:
+        lshwData = open(testFile).read()
+    else:
+        lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  #DEBUG
 
     # Get machine make and model.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
@@ -210,6 +211,8 @@ def readLSHW(machine):
         machine['machine model'].setValue(re.search(r"version: ([\w ]+)", lshwData).groups()[0])
     else:
         machine['machine model'].setValue(re.search(r"product: ([\w ]+)", lshwData).groups()[0])
+    if machineMake.lower() == 'asustek':
+        machine['machine make'].setValue('Asus')
 
     # Find start of LSHW section on CPU description.
     cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
@@ -260,6 +263,8 @@ def readLSHW(machine):
         if re.search(r"dvd-ram", opticalSectionStart):
             machine['dvdram'].setValue('DVDRAM')
         machine['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
+    else:
+        machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
     # wifiSectionStart = re.search(r"Wireless interface")
 
@@ -268,59 +273,71 @@ def readCPUFreq(mach):
     cpuFreq = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
     mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
 
+
+def readUPower(machine):
+    upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
+    if not re.search("power supply.*no", upowerData):
+        machine['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", upowerData).groups()[0])
+        machine['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", upowerData).groups()[0])
+        machine['batt percent'].setValue(re.search(r"capacity:\s*(\d+)\.", upowerData).groups()[0])
+
+
+def readLSUSB(machine, testFile=None):
+    if testFile:
+        lsusbData = open(testFile).read()
+    else:
+        lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
+
+    # Grab the description from any lsusb line with "ebcam" in it
+    webcamSearchResult = re.search(r"Bus.*[0-9a-fA-F]{4}:[0-9a-fA-F]{4} (.*ebcam.*)\n", lsusbData)
+
+    # If "ebcam" wasn't found then try for "hicony" (ie, the company Chicony).
+    if not webcamSearchResult.groups():
+        webcamSearchResult = re.search(r"Bus.*[0-9a-fA-F]{4}:[0-9a-fA-F]{4} (.*hicony.*)\n", lsusbData)
+
+    # If a match was found then use it.
+    if webcamSearchResult.groups():
+        machine['webcam make'].setValue(webcamSearchResult.groups()[0])
+
+    # If 'ebcam' is found then analyze that line.
+    # If 'ebcam' is not found but 'Chicony' is then assume that's the webcam.
+
+    # # Scan the lsusb output for identifiable devices.
+    # if re.search("Chicony", lsusbData):
+    #     machine['webcam manufacturer'].setValue('Chicony')
+    # else:
+    #
+    #     webcamLine = re.search(r".+ebcam", lsusbData)
+    #     if webcamLine != "":
+    #         webcamInfo = rmatch(re.search("ID ....:.... (.*)$", webcamLine))
+    #         machine.setSubfield("webcam manufacturer", webcamInfo, self.name)
+    #     else:
+    #
+    #         machine.setSubfield("webcam manufacturer", "(not present)", self.name)
+
+
+
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
-processCommandLineArguments()
+
+# DEBUG: currently there are not command-line arguments.
+# processCommandLineArguments()
 
 # Initialize machine description with blank fields.
 machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-readLSHW(machine)
+readLSHW(machine, "testdata/lshw.test")
+# readLSHW(machine)
+readUPower(machine)
 readCPUFreq(machine)
+readLSUSB(machine)
 printBuildSheet(machine)
 
 
-# class DataProviderLSUSB:
-#     def __init__(self, fileName=None):
-#         self.name = "lsusb"
-#         if fileName:
-#             self.data = open(fileName).read()
-#         else:
-#             process = subprocess.Popen("lsusb", stdout=subprocess.PIPE)
-#             self.data, _ = process.communicate()
-#
-#     def populate(self, machine):
-#         # Scan the lsusb output for identifiable devices.
-#         if re.search("Chicony", self.data):
-#             machine.setSubfield("webcam manufacturer", "Chicony", self.name)
-#         else:
-#             webcamLine = regGetWholeLine("ebcam", self.data)
-#             if webcamLine != "":
-#                 webcamInfo = rmatch(re.search("ID ....:.... (.*)$", webcamLine))
-#                 machine.setSubfield("webcam manufacturer", webcamInfo, self.name)
-#             else:
-#                 machine.setSubfield("webcam manufacturer", "(not present)", self.name)
 #
 #
-# class DataProviderUPower:
-#     def __init__(self):
-#         self.name = "upower"
-#         process = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE)
-#         self.data, _ = process.communicate()
-#
-#     def populate(self, machine):
-#         if re.search("power supply.*no", self.data):
-#             machine.setSubfield("batt present", "(no battery found)", self.data)
-#         else:
-#             battMax = rmatch(re.search(r"energy-full:\s*(\d+)\.", self.data))
-#             machine.setSubfield("batt max", battMax, self.name)
-#             battOrig = rmatch(re.search(r"energy-full-design:\s*(\d+)\.", self.data))
-#             machine.setSubfield("batt orig", battOrig, self.name)
-#             battPercent = rmatch(re.search(r"capacity:\s*(\d+)\.", self.data))
-#             machine.setSubfield("batt percent", battPercent, self.name)
-#
-# # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys
+# # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
 #
