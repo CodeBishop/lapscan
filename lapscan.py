@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import os
+import math
 
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
 COLOR_TO_USE = '\033[1m'
@@ -69,7 +70,7 @@ class Field:
         return self.m_status
 
 
-fieldNames = 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
+fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
              'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
@@ -82,6 +83,8 @@ fieldNames = 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz'
 
 def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_USE)
+
+    osVersion = mach['os version'].value() + " " + mach['os bit depth'].value() + "-Bit"
 
     # Construct the strings that describe the machine in VCN Build Sheet format.
     modelDescription = mach['machine make'].value() + ' ' + mach['machine model'].value()
@@ -123,7 +126,7 @@ def printBuildSheet(mach):
         wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
     if mach['batt max'].status() == FIELD_HAS_DATA:
-        batteryDescription = 'Capacity= ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
+        batteryDescription = 'Capacity = ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
             + 'Wh = ' + mach['batt percent'].value() + '%'
     else:
         batteryDescription = 'not present'
@@ -166,6 +169,7 @@ def printBuildSheet(mach):
     lidActionDescription = '<lid closed description>'
 
     # Print the VCN Build Sheet to the console.
+    print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
     print "Model".ljust(FIRST_COL_WIDTH) + modelDescription
     print "CPU".ljust(FIRST_COL_WIDTH) + cpuDescription
     print "RAM".ljust(FIRST_COL_WIDTH) + ramDescription
@@ -197,12 +201,28 @@ def printBuildSheet(mach):
 #             COLOR_PRINTING = False
 
 
+def readCPUFreq(mach):
+    cpuFreq = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
+    mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+
+
+def readGetconf(machine):
+    bitDepth, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
+    machine['os bit depth'].setValue(re.search(r"(\d*)\n", bitDepth).groups()[0])
+
+
+def readLSBRelease(machine):
+    DEVNULL = open(os.devnull, 'wb')
+    lsbreleaseData, _ = subprocess.Popen("lsb_release -a".split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
+    machine['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", lsbreleaseData).groups()[0])
+
+
 # Read and interpret lshw output.
-def readLSHW(machine, testFile = None):
+def readLSHW(machine, testFile=None):
     if testFile:
         lshwData = open(testFile).read()
     else:
-        lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  #DEBUG
+        lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
 
     # Get machine make and model.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
@@ -266,20 +286,11 @@ def readLSHW(machine, testFile = None):
     else:
         machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
-    # wifiSectionStart = re.search(r"Wireless interface")
-
-
-def readCPUFreq(mach):
-    cpuFreq = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
-    mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
-
-
-def readUPower(machine):
-    upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
-    if not re.search("power supply.*no", upowerData):
-        machine['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", upowerData).groups()[0])
-        machine['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", upowerData).groups()[0])
-        machine['batt percent'].setValue(re.search(r"capacity:\s*(\d+)\.", upowerData).groups()[0])
+    wifiSearch = re.search(r"Wireless interface", lshwData)
+    if wifiSearch:
+        wifiSectionStart = lshwData[wifiSearch.start():]
+        machine['wifi make'].setValue(re.search(r"product: \w*(.*)\n", wifiSectionStart).groups()[0])
+        # EXAMPLE:                product: Ultimate N WiFi Link 5300
 
 
 def readLSUSB(machine, testFile=None):
@@ -299,22 +310,19 @@ def readLSUSB(machine, testFile=None):
     if webcamSearchResult.groups():
         machine['webcam make'].setValue(webcamSearchResult.groups()[0])
 
-    # If 'ebcam' is found then analyze that line.
-    # If 'ebcam' is not found but 'Chicony' is then assume that's the webcam.
 
-    # # Scan the lsusb output for identifiable devices.
-    # if re.search("Chicony", lsusbData):
-    #     machine['webcam manufacturer'].setValue('Chicony')
-    # else:
-    #
-    #     webcamLine = re.search(r".+ebcam", lsusbData)
-    #     if webcamLine != "":
-    #         webcamInfo = rmatch(re.search("ID ....:.... (.*)$", webcamLine))
-    #         machine.setSubfield("webcam manufacturer", webcamInfo, self.name)
-    #     else:
-    #
-    #         machine.setSubfield("webcam manufacturer", "(not present)", self.name)
-
+def readUPower(machine):
+    upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
+    if not re.search("power supply.*no", upowerData):
+        machine['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", upowerData).groups()[0])
+        machine['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", upowerData).groups()[0])
+        # The capacity value given by upower won't match match the energy-full / energy-full-design. Calculate manually.
+        percentage = float(machine['batt max'].value()) / float(machine['batt orig'].value())
+        percentage = int(math.ceil(percentage * 100.0))
+        # Upower's numbers sometimes show values > 100% and FreeGeek limits these to 100% in writing.
+        if percentage > 100:
+            percentage = 100
+        machine['batt percent'].setValue(str(percentage))
 
 
 # # ***************************************************************************************
@@ -329,8 +337,10 @@ machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-readLSHW(machine, "testdata/lshw.test")
+readLSHW(machine, "testdata/lshwthinkpadr400.test")
 # readLSHW(machine)
+readLSBRelease(machine)
+readGetconf(machine)
 readUPower(machine)
 readCPUFreq(machine)
 readLSUSB(machine)
