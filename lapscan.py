@@ -2,6 +2,8 @@
 
 # TO DO
 #   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
+#   Write a camelCaseMaker() method that will search for known
+#   Add functionality to run Cheese and other tests and query the user how they went.
 
 
 # Terminology
@@ -290,7 +292,8 @@ def readLSHW(machine, testFile=None):
     wifiSearch = re.search(r"Wireless interface", lshwData)
     if wifiSearch:
         wifiSectionStart = lshwData[wifiSearch.start():]
-        machine['wifi make'].setValue(re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0])
+        wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
+        machine['wifi make'].setValue(wifiMake)
 
     # Find video hardware description.
     videoSearch = re.search(r"3D controller", lshwData)
@@ -323,7 +326,11 @@ def readLSUSB(machine, testFile=None):
 
     # If a match was found then use it.
     if webcamSearchResult.groups():
-        machine['webcam make'].setValue(webcamSearchResult.groups()[0])
+        webcamMake = webcamSearchResult.groups()[0]
+        for junkWord in ['co.', 'electronics', 'ltd', 'cmos']:
+            webcamMake = re.sub('(?i) ' + junkWord, '', webcamMake)
+        webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
+        machine['webcam make'].setValue(webcamMake)
 
 
 def readUPower(machine):
