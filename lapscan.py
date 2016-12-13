@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 # TO DO
-#   Add the lshw Data Provider and start migrating to getting your data from it instead of lshw-short.
+#   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
 
 
 # Terminology
@@ -120,7 +120,7 @@ def printBuildSheet(mach):
             opticalDescription += mach['dvdram'].value() + ' '
 
     if mach['wifi make'].status() == FIELD_HAS_DATA:
-        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + ' 802.11 ' \
+        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + '802.11 ' \
             + mach['wifi modes'].value()
     else:
         wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
@@ -286,11 +286,26 @@ def readLSHW(machine, testFile=None):
     else:
         machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
+    # Get wifi hardware description.
     wifiSearch = re.search(r"Wireless interface", lshwData)
     if wifiSearch:
         wifiSectionStart = lshwData[wifiSearch.start():]
-        machine['wifi make'].setValue(re.search(r"product: \w*(.*)\n", wifiSectionStart).groups()[0])
-        # EXAMPLE:                product: Ultimate N WiFi Link 5300
+        machine['wifi make'].setValue(re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0])
+
+    # Find video hardware description.
+    videoSearch = re.search(r"3D controller", lshwData)
+    if not videoSearch:
+        videoSearch = re.search(r"VGA compatible controller", lshwData)
+    videoSection = lshwData[videoSearch.start():]
+    # Pull out the vendor and product strings and append them to each other.
+    videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
+    videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
+    # Strip out junk-words: corporation, chipset, graphics, controller, processor
+    for junkWord in ['corporation', 'chipset', 'graphics', 'controller', 'processor']:
+        videoMake = re.sub('(?i) ' + junkWord, '', videoMake)
+        videoModel = re.sub('(?i) ' + junkWord, '', videoModel)
+    machine['video make'].setValue(videoMake)
+    machine['video model'].setValue(videoModel)
 
 
 def readLSUSB(machine, testFile=None):
