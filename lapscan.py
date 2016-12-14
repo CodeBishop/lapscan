@@ -368,6 +368,16 @@ def readLSHW(machine, testFile=None):
         machine['ethernet make'].setValue(ethernetMake)
         machine['ethernet model'].setValue(ethernetModel)
 
+    # Get Audio hardware description.
+    audioSearch = re.search(r"\*-multimedia", lshwData)
+    if audioSearch:
+        audioSection = lshwData[audioSearch.start():]
+        # Get the audio make and model.
+        audioMake = re.search(r"vendor: (.*)\n", audioSection).groups()[0]
+        audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
+        machine['audio make'].setValue(audioMake)
+        machine['audio model'].setValue(audioModel)
+
 
 def readLSUSB(machine, testFile=None):
     if testFile:
