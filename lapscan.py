@@ -59,7 +59,7 @@ class Field:
         self.m_status = FIELD_NOT_INITIALIZED
 
     def setValue(self, val):
-        self.m_value = val
+        self.m_value = sanitizeString(val)
         self.m_status = FIELD_HAS_DATA
 
     def value(self):
@@ -72,6 +72,12 @@ class Field:
         return self.m_status
 
 
+# Words that should be stripped out of hardware fields before displaying them.
+junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
+            '\(r\)', 'cmos', 'co.', 'cpu'
+
+camelCaseNames = 'Lenovo', 'Toshiba'
+
 fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
@@ -81,6 +87,26 @@ fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'cpu
              'usb front', 'usb back', 'vga ok', 'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', \
              'volume ok', 'volume keys', 'headphone jack ok', 'microphone ok', 'microphone jacks', \
              'media controls ok', 'media keys', 'lid closed description'
+
+
+# Remove junk words, irrelevant punctuation and multiple spaces from a field string.
+def sanitizeString(string):
+    # Remove junk words like "corporation", "ltd", etc
+    for word in junkWords:
+        string = re.sub('(?i)' + word, '', string)
+    # Fix all-caps brand and model names.
+    for word in camelCaseNames:
+        string = re.sub('(?i)' + word, word, string)
+    # Remove junk punctuation.
+    string = re.sub(',', '', string)
+    string = re.sub('\[', '', string)
+    string = re.sub('\]', '', string)
+    # Reduce multiple whitespace sections to a single space.
+    string = re.sub('\s\s+', ' ', string)
+    # Remove leading and trailing whitespace.
+    string = re.sub('^\s*', '', string)
+    string = re.sub('\s*$', '', string)
+    return string
 
 
 def printBuildSheet(mach):
@@ -228,13 +254,14 @@ def readLSHW(machine, testFile=None):
 
     # Get machine make and model.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
-    machine['machine make'].setValue(machineMake)
+    machineModel =machine['machine model'].setValue(re.search(r"product: ([\w ]+)", lshwData).groups()[0])
+    # Correct for Lenovo putting their machine model under 'version'.
     if machineMake == "LENOVO":
-        machine['machine model'].setValue(re.search(r"version: ([\w ]+)", lshwData).groups()[0])
-    else:
-        machine['machine model'].setValue(re.search(r"product: ([\w ]+)", lshwData).groups()[0])
+        machineModel = re.search(r"version: ([\w ]+)", lshwData).groups()[0]
     if machineMake.lower() == 'asustek':
-        machine['machine make'].setValue('Asus')
+        machineMake = 'Asus'
+    machine['machine make'].setValue(machineMake)
+    machine['machine model'].setValue(machineModel)
 
     # Find start of LSHW section on CPU description.
     cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
@@ -300,13 +327,9 @@ def readLSHW(machine, testFile=None):
     if not videoSearch:
         videoSearch = re.search(r"VGA compatible controller", lshwData)
     videoSection = lshwData[videoSearch.start():]
-    # Pull out the vendor and product strings and append them to each other.
+    # Get the video make and model.
     videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
     videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
-    # Strip out junk-words: corporation, chipset, graphics, controller, processor
-    for junkWord in ['corporation', 'chipset', 'graphics', 'controller', 'processor']:
-        videoMake = re.sub('(?i) ' + junkWord, '', videoMake)
-        videoModel = re.sub('(?i) ' + junkWord, '', videoModel)
     machine['video make'].setValue(videoMake)
     machine['video model'].setValue(videoModel)
 
