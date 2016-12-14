@@ -5,6 +5,11 @@
 #   Write a camelCaseMaker() method that will search for known
 #   Add functionality to run Cheese and other tests and query the user how they went.
 #   Boot a MacBook and MacBook Pro with Ubuntu and pull all their outputs (lshw, lspci, lsusb, etc).
+#   Test the program with blank input files to simulate all the different ways that re.search() might fail.
+#   Add functionality to store the raw console outputs as strings, ask the user at the end if everything was
+#   correct. If the user says no then ask them for an explanation and email it along with the raw data to myself.
+#   Add a function for extracting lshw sections so that I don't risk having re.search pull unfound fields from
+#   later sections thereby producing garbage data for fields.
 
 
 # Evaluations to be Made
@@ -48,7 +53,7 @@ import sys
 import os
 import math
 
-FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console..
+FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console.
 COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
@@ -92,7 +97,7 @@ class Field:
 
 # Words that should be stripped out of hardware fields before displaying them.
 junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
-            '\(r\)', 'cmos', 'co\.', 'cpu'
+            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection'
 
 camelCaseNames = 'Lenovo', 'Toshiba'
 
@@ -196,7 +201,7 @@ def printBuildSheet(mach):
 
     # DEBUG: This should confirm Gigabit.
     if mach['ethernet make'].status() == FIELD_HAS_DATA:
-        ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value() + ' Gigabit'
+        ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value()
     else:
         ethernetDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
@@ -230,15 +235,15 @@ def printBuildSheet(mach):
     print "Network".ljust(FIRST_COL_WIDTH) + ethernetDescription
     print "Audio".ljust(FIRST_COL_WIDTH) + audioDescription
     sys.stdout.write(COLOR_TO_REVERT_TO)
-    print "USB".ljust(FIRST_COL_WIDTH) + usbDescription
-    print "VGA port".ljust(FIRST_COL_WIDTH) + vgaPortDescription
-    print "Wifi on/off".ljust(FIRST_COL_WIDTH) + wifiOnOffDescription
-    print "Volume control".ljust(FIRST_COL_WIDTH) + volumeControlDescription
-    print "Headphone jack".ljust(FIRST_COL_WIDTH) + headphoneDescription
-    print "Microphone".ljust(FIRST_COL_WIDTH) + microphoneDescription
-    print "Media controls".ljust(FIRST_COL_WIDTH) + mediaControlsDescription
-    print "When lid closed".ljust(FIRST_COL_WIDTH) + lidActionDescription
-    print
+    # print "USB".ljust(FIRST_COL_WIDTH) + usbDescription
+    # print "VGA port".ljust(FIRST_COL_WIDTH) + vgaPortDescription
+    # print "Wifi on/off".ljust(FIRST_COL_WIDTH) + wifiOnOffDescription
+    # print "Volume control".ljust(FIRST_COL_WIDTH) + volumeControlDescription
+    # print "Headphone jack".ljust(FIRST_COL_WIDTH) + headphoneDescription
+    # print "Microphone".ljust(FIRST_COL_WIDTH) + microphoneDescription
+    # print "Media controls".ljust(FIRST_COL_WIDTH) + mediaControlsDescription
+    # print "When lid closed".ljust(FIRST_COL_WIDTH) + lidActionDescription
+    # print
 
 
 # def processCommandLineArguments():
@@ -272,10 +277,11 @@ def readLSHW(machine, testFile=None):
 
     # Get machine make and model.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
-    machineModel =machine['machine model'].setValue(re.search(r"product: ([\w ]+)", lshwData).groups()[0])
+    machineModel = re.search(r"product: ([\w ]+)", lshwData).groups()[0]
     # Correct for Lenovo putting their machine model under 'version'.
-    if machineMake == "LENOVO":
+    if machineMake.lower() == "lenovo":
         machineModel = re.search(r"version: ([\w ]+)", lshwData).groups()[0]
+    # Correct for the ugly name of Asus.
     if machineMake.lower() == 'asustek':
         machineMake = 'Asus'
     machine['machine make'].setValue(machineMake)
@@ -340,16 +346,27 @@ def readLSHW(machine, testFile=None):
         wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
         machine['wifi make'].setValue(wifiMake)
 
-    # Find video hardware description.
+    # Get video hardware description (3D hardware if found, integrated hardware if not).
     videoSearch = re.search(r"3D controller", lshwData)
     if not videoSearch:
         videoSearch = re.search(r"VGA compatible controller", lshwData)
-    videoSection = lshwData[videoSearch.start():]
-    # Get the video make and model.
-    videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
-    videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
-    machine['video make'].setValue(videoMake)
-    machine['video model'].setValue(videoModel)
+    if videoSearch:
+        videoSection = lshwData[videoSearch.start():]
+        # Get the video make and model.
+        videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
+        videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
+        machine['video make'].setValue(videoMake)
+        machine['video model'].setValue(videoModel)
+
+    # Get Ethernet hardware description.
+    ethernetSearch = re.search(r"Ethernet interface", lshwData)
+    if ethernetSearch:
+        ethernetSection = lshwData[ethernetSearch.start():]
+        # Get the ethernet make and model.
+        ethernetMake = re.search(r"vendor: (.*)\n", ethernetSection).groups()[0]
+        ethernetModel = re.search(r"product: (.*)\n", ethernetSection).groups()[0]
+        machine['ethernet make'].setValue(ethernetMake)
+        machine['ethernet model'].setValue(ethernetModel)
 
 
 def readLSUSB(machine, testFile=None):
@@ -358,18 +375,16 @@ def readLSUSB(machine, testFile=None):
     else:
         lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
 
-    # Grab the description from any lsusb line with "ebcam" in it
-    webcamSearchResult = re.search(r"Bus.*[0-9a-fA-F]{4}:[0-9a-fA-F]{4} (.*ebcam.*)\n", lsusbData)
+    # Grab the description from any lsusb line with "webcam" in it
+    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", lsusbData)
 
-    # If "ebcam" wasn't found then try for "hicony" (ie, the company Chicony).
-    if not webcamSearchResult.groups():
-        webcamSearchResult = re.search(r"Bus.*[0-9a-fA-F]{4}:[0-9a-fA-F]{4} (.*hicony.*)\n", lsusbData)
+    # If "webcam" wasn't found then try for "Chicony".
+    if not webcamSearchResult:
+        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", lsusbData)
 
-    # If a match was found then use it.
-    if webcamSearchResult.groups():
+    # If any match was found then use it.
+    if webcamSearchResult:
         webcamMake = webcamSearchResult.groups()[0]
-        for junkWord in ['co.', 'electronics', 'ltd', 'cmos']:
-            webcamMake = re.sub('(?i) ' + junkWord, '', webcamMake)
         webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
         machine['webcam make'].setValue(webcamMake)
 
@@ -400,16 +415,15 @@ machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-readLSHW(machine, "testdata/lshwthinkpadr400.test")
+readLSHW(machine, "testdata/lshw_thinkpadr400.out")
 # readLSHW(machine)
 readLSBRelease(machine)
 readGetconf(machine)
 readUPower(machine)
 readCPUFreq(machine)
-readLSUSB(machine)
+# readLSUSB(machine)
+readLSUSB(machine, "testdata/lsusb_chicony.out")
 printBuildSheet(machine)
-
-
 #
 #
 # # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
