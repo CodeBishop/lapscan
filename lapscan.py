@@ -4,6 +4,24 @@
 #   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
 #   Write a camelCaseMaker() method that will search for known
 #   Add functionality to run Cheese and other tests and query the user how they went.
+#   Boot a MacBook and MacBook Pro with Ubuntu and pull all their outputs (lshw, lspci, lsusb, etc).
+
+
+# Evaluations to be Made
+#   Run the stress test.
+#   Update the OS thereby confirming that the wifi works.
+#   Disable wifi, confirming that the wifi on/off button/switch works and preparing to test ethernet.
+#   Plug in ethernet (wifi still off) and install Synaptic and LXDE, confirming that ethernet works.
+#   Play optical discs to confirm the drive works, test the media controls, volume controls and headphone jack.
+#   Run Cheese to confirm webcam works.
+#   Test the ethernet jack.
+#   Test USB ports (don't miss the eSATA ones).
+#   Test the video ports: DVI, VGA, HDMI, Display port.
+#   Test the microphone.
+#   Close the lid to see what happens.
+#   Disable the screen saver and password (for the store's convenience).
+#   Power down and check that the RAM has green stickers.
+#   Clean the laptop, put FreeGeek logo sticker and ID sticker on it. Record it in the build book.
 
 
 # Terminology
@@ -74,7 +92,7 @@ class Field:
 
 # Words that should be stripped out of hardware fields before displaying them.
 junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
-            '\(r\)', 'cmos', 'co.', 'cpu'
+            '\(r\)', 'cmos', 'co\.', 'cpu'
 
 camelCaseNames = 'Lenovo', 'Toshiba'
 
