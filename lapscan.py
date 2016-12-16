@@ -12,6 +12,7 @@
 #   later sections thereby producing garbage data for fields.
 #   Make the program able to gracefully handle machine that have only one RAM slot.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
+#   Determine if there's a way to get the Bluetooth data. If not then eliminate the field.
 
 
 # Evaluations to be Made
@@ -85,10 +86,12 @@ class Field:
         self.m_status = FIELD_NOT_INITIALIZED
 
     def setValue(self, val):
+        assert type(val) == str
         self.m_value = sanitizeString(val)
         self.m_status = FIELD_HAS_DATA
 
     def setRawValue(self, val):
+        assert type(val) == str
         self.m_value = val
         self.m_status = FIELD_HAS_DATA
 
@@ -108,7 +111,7 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
 
 camelCaseNames = 'Lenovo', 'Toshiba'
 
-fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'machine serial', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
+fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'machine serial', 'machine id', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
              'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
@@ -236,10 +239,8 @@ def printBuildSheet(mach):
 # Fill-in a build sheet given a template.
 def createODSFile(mach, templateFilename, outputFilename=None):
     if not outputFilename:
-        if mach['machine make'].status() == mach['machine model'].status() == FIELD_HAS_DATA:
-            machineMake = mach['machine make'].value()
-            machineModel = mach['machine model'].value()
-            outputFilename = (machineMake + '_' + machineModel + '.ods').replace(' ', '_')
+        if mach['machine id'].status() == FIELD_HAS_DATA:
+            outputFilename = machine['machine id'].value() + '.ods'
         else:
             outputFilename = 'output.ods'
     odsInput = zipfile.ZipFile (templateFilename, 'r')
@@ -256,27 +257,33 @@ def createODSFile(mach, templateFilename, outputFilename=None):
 
 
 def readCPUFreq(mach):
-    cpuFreq = float(open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").readlines()[0])
+    rawData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
+    cpuFreq = float(rawData)
     mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+    return rawData
 
 
 def readGetconf(machine):
-    bitDepth, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
-    machine['os bit depth'].setValue(re.search(r"(\d*)\n", bitDepth).groups()[0])
+    rawData, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
+    machine['os bit depth'].setValue(re.search(r"(\d*)\n", rawData).groups()[0])
+    return rawData
 
 
 def readLSBRelease(machine):
     DEVNULL = open(os.devnull, 'wb')
-    lsbreleaseData, _ = subprocess.Popen("lsb_release -a".split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
-    machine['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", lsbreleaseData).groups()[0])
+    rawData, _ = subprocess.Popen("lsb_release -a".split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
+    machine['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", rawData).groups()[0])
+    return rawData
 
 
 # Read and interpret lshw output.
 def readLSHW(machine, testFile=None):
     if testFile:
         lshwData = open(testFile).read()
+        rawData = 'Substitute data taken from ' + testFile
     else:
         lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
+        rawData = str(lshwData)
 
     # Get machine make, model and serial number.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
@@ -288,9 +295,11 @@ def readLSHW(machine, testFile=None):
     # Correct for the ugly name of Asus.
     if machineMake.lower() == 'asustek':
         machineMake = 'Asus'
+    machineID = (machineMake + '_' + machineModel + '_' + machineSerial).replace(' ', '_')
     machine['machine make'].setValue(machineMake)
     machine['machine model'].setValue(machineModel)
     machine['machine serial'].setRawValue(machineSerial)
+    machine['machine id'].setRawValue(machineID)
 
     # Find start of LSHW section on CPU description.
     cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
@@ -383,13 +392,17 @@ def readLSHW(machine, testFile=None):
         machine['audio make'].setValue(audioMake)
         machine['audio model'].setValue(audioModel)
 
+    return rawData
+
 
 # Read and interpret lsusb output.
 def readLSUSB(machine, testFile=None):
     if testFile:
         lsusbData = open(testFile).read()
+        rawData = 'Substitute data taken from ' + testFile
     else:
         lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
+        rawData = str(lsusbData)
 
     # Grab the description from any lsusb line with "webcam" in it
     webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", lsusbData)
@@ -404,10 +417,13 @@ def readLSUSB(machine, testFile=None):
         webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
         machine['webcam make'].setValue(webcamMake)
 
+    return rawData
+
 
 # Read and interpret "upower --dump" output.
 def readUPower(machine):
     upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
+    rawData = str(upowerData)
     if not re.search("power supply.*no", upowerData):
         machine['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", upowerData).groups()[0])
         machine['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", upowerData).groups()[0])
@@ -418,6 +434,7 @@ def readUPower(machine):
         if percentage > 100:
             percentage = 100
         machine['batt percent'].setValue(str(percentage))
+    return rawData
 
 
 # def processCommandLineArguments():
@@ -437,19 +454,30 @@ machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-# readLSHW(machine)
-readLSBRelease(machine)
-readGetconf(machine)
-readUPower(machine)
-readCPUFreq(machine)
-readLSUSB(machine)
+# Initialize the string that will contain all the raw data.
+rawFileContents = ''
+
+# rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
+rawLSHWData = readLSHW(machine)
+rawLSBReleaseData = readLSBRelease(machine)
+rawGetConfData = readGetconf(machine)
+rawUPowerData = readUPower(machine)
+rawCPUFreqData = readCPUFreq(machine)
+rawLSUSBData = readLSUSB(machine)
 # readLSUSB(machine, "testdata/lsusb_chicony.out")
 printBuildSheet(machine)
 createODSFile(machine, 'template.ods')
 
-print machine["machine serial"].value()
-#
+rawFileContents += '{{{lshw data}}}' + '\n' + rawLSHWData + '\n\n'
+rawFileContents += '{{{lsusb data}}}' + '\n' + rawLSUSBData + '\n\n'
+rawFileContents += '{{{upower data}}}' + '\n' + rawUPowerData + '\n\n'
+rawFileContents += '{{{lsbrelease data}}}' + '\n' + rawLSBReleaseData + '\n\n'
+rawFileContents += '{{{getconf data}}}' + '\n' + rawGetConfData + '\n\n'
+rawFileContents += '{{{cpufreq data}}}' + '\n' + rawCPUFreqData + '\n\n'
+
+rawFile = open(machine['machine id'].value() + '.txt', 'w')
+rawFile.write(rawFileContents)
+rawFile.close()
 #
 # # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
 #
