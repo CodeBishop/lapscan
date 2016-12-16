@@ -11,6 +11,7 @@
 #   Add a function for extracting lshw sections so that I don't risk having re.search pull unfound fields from
 #   later sections thereby producing garbage data for fields.
 #   Make the program able to gracefully handle machine that have only one RAM slot.
+#   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
 
 
 # Evaluations to be Made
@@ -87,6 +88,10 @@ class Field:
         self.m_value = sanitizeString(val)
         self.m_status = FIELD_HAS_DATA
 
+    def setRawValue(self, val):
+        self.m_value = val
+        self.m_status = FIELD_HAS_DATA
+
     def value(self):
         return self.m_value
 
@@ -103,7 +108,7 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
 
 camelCaseNames = 'Lenovo', 'Toshiba'
 
-fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
+fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'machine serial', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
              'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
@@ -273,9 +278,10 @@ def readLSHW(machine, testFile=None):
     else:
         lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
 
-    # Get machine make and model.
+    # Get machine make, model and serial number.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
     machineModel = re.search(r"product: ([\w ]+)", lshwData).groups()[0]
+    machineSerial = re.search(r"serial: ([\w ]+)", lshwData).groups()[0]
     # Correct for Lenovo putting their machine model under 'version'.
     if machineMake.lower() == "lenovo":
         machineModel = re.search(r"version: ([\w ]+)", lshwData).groups()[0]
@@ -284,6 +290,7 @@ def readLSHW(machine, testFile=None):
         machineMake = 'Asus'
     machine['machine make'].setValue(machineMake)
     machine['machine model'].setValue(machineModel)
+    machine['machine serial'].setRawValue(machineSerial)
 
     # Find start of LSHW section on CPU description.
     cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
@@ -430,8 +437,8 @@ machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-# readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-readLSHW(machine)
+readLSHW(machine, "testdata/lshw_thinkpadr400.out")
+# readLSHW(machine)
 readLSBRelease(machine)
 readGetconf(machine)
 readUPower(machine)
@@ -440,6 +447,8 @@ readLSUSB(machine)
 # readLSUSB(machine, "testdata/lsusb_chicony.out")
 printBuildSheet(machine)
 createODSFile(machine, 'template.ods')
+
+print machine["machine serial"].value()
 #
 #
 # # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
