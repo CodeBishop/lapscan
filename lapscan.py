@@ -10,6 +10,7 @@
 #   correct. If the user says no then ask them for an explanation and email it along with the raw data to myself.
 #   Add a function for extracting lshw sections so that I don't risk having re.search pull unfound fields from
 #   later sections thereby producing garbage data for fields.
+#   Make the program able to gracefully handle machine that have only one RAM slot.
 
 
 # Evaluations to be Made
@@ -52,6 +53,7 @@ import subprocess
 import sys
 import os
 import math
+import zipfile
 
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console.
 COLOR_TO_USE = '\033[1m'
@@ -105,7 +107,7 @@ fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'cpu
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
              'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
-             'bluetooth make', 'bluetooth model', 'bios key', 'video make', 'video model', \
+             'bluetooth make', 'bluetooth model', 'video make', 'video model', \
              'ethernet make', 'ethernet model', 'audio make', 'audio model', 'usb left', 'usb right', \
              'usb front', 'usb back', 'vga ok', 'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', \
              'volume ok', 'volume keys', 'headphone jack ok', 'microphone ok', 'microphone jacks', \
@@ -132,6 +134,7 @@ def sanitizeString(string):
     return string
 
 
+# Print a machine's info to the terminal
 def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_USE)
 
@@ -192,8 +195,6 @@ def printBuildSheet(mach):
     else:
         bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
-    biosEntryKeyDescription = mach['bios key'].value()
-
     if mach['video make'].status() == FIELD_HAS_DATA:
         videoDescription = mach['video make'].value() + ' ' + mach['video model'].value()
     else:
@@ -210,15 +211,6 @@ def printBuildSheet(mach):
     else:
         audioDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
-    usbDescription = '<#> LEFT, <#> RIGHT, <#> FRONT, <#> BACK'
-    vgaPortDescription = '<vga ok> <vga toggle ok> <vga keys>'
-    wifiOnOffDescription = '<wifi ok> <wifi keys>'
-    volumeControlDescription = '<volume ok> <volume keys>'
-    headphoneDescription = '<headphone jack ok>'
-    microphoneDescription = '<microphone ok> <microphone types>'
-    mediaControlsDescription = '<media controls ok> <media keys>'
-    lidActionDescription = '<lid closed description>'
-
     # Print the VCN Build Sheet to the console.
     print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
     print "Model".ljust(FIRST_COL_WIDTH) + modelDescription
@@ -230,26 +222,32 @@ def printBuildSheet(mach):
     print "Battery".ljust(FIRST_COL_WIDTH) + batteryDescription
     print "Webcam".ljust(FIRST_COL_WIDTH) + webcamDescription
     print "Bluetooth".ljust(FIRST_COL_WIDTH) + bluetoothDescription
-    print "BIOS entry key".ljust(FIRST_COL_WIDTH) + biosEntryKeyDescription
     print "Video".ljust(FIRST_COL_WIDTH) + videoDescription
     print "Network".ljust(FIRST_COL_WIDTH) + ethernetDescription
     print "Audio".ljust(FIRST_COL_WIDTH) + audioDescription
     sys.stdout.write(COLOR_TO_REVERT_TO)
-    # print "USB".ljust(FIRST_COL_WIDTH) + usbDescription
-    # print "VGA port".ljust(FIRST_COL_WIDTH) + vgaPortDescription
-    # print "Wifi on/off".ljust(FIRST_COL_WIDTH) + wifiOnOffDescription
-    # print "Volume control".ljust(FIRST_COL_WIDTH) + volumeControlDescription
-    # print "Headphone jack".ljust(FIRST_COL_WIDTH) + headphoneDescription
-    # print "Microphone".ljust(FIRST_COL_WIDTH) + microphoneDescription
-    # print "Media controls".ljust(FIRST_COL_WIDTH) + mediaControlsDescription
-    # print "When lid closed".ljust(FIRST_COL_WIDTH) + lidActionDescription
-    # print
 
 
-# def processCommandLineArguments():
-#     for item in sys.argv[1:]:
-#         if item == '-nc':
-#             COLOR_PRINTING = False
+# Fill-in a build sheet given a template.
+def createODSFile(mach, templateFilename, outputFilename=None):
+    if not outputFilename:
+        if mach['machine make'].status() == mach['machine model'].status() == FIELD_HAS_DATA:
+            machineMake = mach['machine make'].value()
+            machineModel = mach['machine model'].value()
+            outputFilename = (machineMake + '_' + machineModel + '.ods').replace(' ', '_')
+        else:
+            outputFilename = 'output.ods'
+    odsInput = zipfile.ZipFile (templateFilename, 'r')
+    odsOutput = zipfile.ZipFile (outputFilename, 'w')
+    for fileHandle in odsInput.infolist():
+        fileData = odsInput.read(fileHandle.filename)
+        if fileHandle.filename == 'content.xml':
+            for fieldName in fieldNames:
+                field = mach[fieldName]
+                fileData = fileData.replace('{' + fieldName + '}', field.value())
+        odsOutput.writestr(fileHandle, fileData)
+    odsOutput.close()
+    odsInput.close()
 
 
 def readCPUFreq(mach):
@@ -379,6 +377,7 @@ def readLSHW(machine, testFile=None):
         machine['audio model'].setValue(audioModel)
 
 
+# Read and interpret lsusb output.
 def readLSUSB(machine, testFile=None):
     if testFile:
         lsusbData = open(testFile).read()
@@ -399,6 +398,7 @@ def readLSUSB(machine, testFile=None):
         machine['webcam make'].setValue(webcamMake)
 
 
+# Read and interpret "upower --dump" output.
 def readUPower(machine):
     upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
     if not re.search("power supply.*no", upowerData):
@@ -413,11 +413,16 @@ def readUPower(machine):
         machine['batt percent'].setValue(str(percentage))
 
 
+# def processCommandLineArguments():
+#     for item in sys.argv[1:]:
+#         if item == '-nc':
+#             COLOR_PRINTING = False
+
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
 
-# DEBUG: currently there are not command-line arguments.
+# DEBUG: currently there are no command-line arguments.
 # processCommandLineArguments()
 
 # Initialize machine description with blank fields.
@@ -425,15 +430,16 @@ machine = dict()
 for fieldName in fieldNames:
     machine[fieldName] = Field(fieldName)
 
-readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-# readLSHW(machine)
+# readLSHW(machine, "testdata/lshw_thinkpadr400.out")
+readLSHW(machine)
 readLSBRelease(machine)
 readGetconf(machine)
 readUPower(machine)
 readCPUFreq(machine)
-# readLSUSB(machine)
-readLSUSB(machine, "testdata/lsusb_chicony.out")
+readLSUSB(machine)
+# readLSUSB(machine, "testdata/lsusb_chicony.out")
 printBuildSheet(machine)
+createODSFile(machine, 'template.ods')
 #
 #
 # # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
