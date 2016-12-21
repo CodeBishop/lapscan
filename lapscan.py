@@ -13,6 +13,15 @@
 #   Make the program able to gracefully handle machine that have only one RAM slot.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
 #   Determine if there's a way to get the Bluetooth data. If not then eliminate the field.
+#   Make the program prompt for the admin password rather than complain that it's not in sudo mode.
+#   Rewrite the LSHW reading code to pull data off in sections so that it cannot accidentally read the vendor
+#       for a product from the later section of a different product.
+#   Change the program so that it reads all it's data into the raw file before processing it. That way if the
+#       processing crashes then you have the RAW file to use for recreating the problem and don't need the machine.
+#   Make sure the program handles it gracefully if:
+#       The template file is not found.
+#       The raw file already exists and needs to be overwritten (not appended).
+#       The ods file already exists and needs to be overwritten (not appended).
 
 
 # Evaluations to be Made
