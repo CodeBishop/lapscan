@@ -10,7 +10,7 @@
 #   correct. If the user says no then ask them for an explanation and email it along with the raw data to myself.
 #   Add a function for extracting lshw sections so that I don't risk having re.search pull unfound fields from
 #   later sections thereby producing garbage data for fields.
-#   Make the program able to gracefully handle machine that have only one RAM slot.
+#   Make the program able to gracefully handle machines that have only one RAM slot and machines that four.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
 #   Determine if there's a way to get the Bluetooth data. If not then eliminate the field.
 #   Make the program prompt for the admin password rather than complain that it's not in sudo mode.
@@ -22,6 +22,7 @@
 #       The template file is not found.
 #       The raw file already exists and needs to be overwritten (not appended).
 #       The ods file already exists and needs to be overwritten (not appended).
+#   Check that you are correctly differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?".
 
 
 # Evaluations to be Made
@@ -70,6 +71,9 @@ FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sh
 COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
+RAW_DATA_WAS_LOADED_FROM_FILE = False
+
+debugMode = False
 
 # Color printing functions. DEBUG: THESE CAN BE DELETED.
 # def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
@@ -279,8 +283,7 @@ def readGetconf(machine):
 
 
 def readLSBRelease(machine):
-    DEVNULL = open(os.devnull, 'wb')
-    rawData, _ = subprocess.Popen("lsb_release -a".split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
+    rawData, _ = subprocess.Popen("lsb_release -d".split(), stdout=subprocess.PIPE).communicate()
     machine['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", rawData).groups()[0])
     return rawData
 
@@ -446,47 +449,124 @@ def readUPower(machine):
     return rawData
 
 
-# def processCommandLineArguments():
-#     for item in sys.argv[1:]:
-#         if item == '-nc':
-#             COLOR_PRINTING = False
+def getRawData(rawFilePath=None):
+    global RAW_DATA_WAS_LOADED_FROM_FILE
+    rawDict = dict()
+
+    if rawFilePath is not None:
+        RAW_DATA_WAS_LOADED_FROM_FILE = True
+
+    if rawFilePath is None:
+        RAW_DATA_WAS_LOADED_FROM_FILE = False
+        # Get CPU speed.
+        try:
+            rawData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
+        except IOError as errMsg:
+            print "WARNING: CPU frequency could not be determined. Unable to access the cpuinfo_max_freq " \
+                  "system file because: " + str(errMsg)
+
+        # Get OS bit depth.
+        try:
+            getConfData, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
+            rawDict['getconf'] = str(getConfData)
+        except OSError as errMsg:
+            print "WARNING: OS bit-depth could not be determined. Execution of getconf failed " \
+                  "with message: " + str(errMsg)
+        # Get Linux version information.
+        try:
+            LSBReleaseData, _ = subprocess.Popen("lsb_release -d".split(), stdout=subprocess.PIPE).communicate()
+            rawDict['lsb_release'] = str(LSBReleaseData)
+        except OSError as errMsg:
+            print "WARNING: Linux version could not be determined. Execution of lsb_release failed " \
+                  "with message: " + str(errMsg)
+
+        # Get bulk information about all hardware.
+        try:
+            lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
+            rawDict['lshw'] = str(lshwData)
+        except OSError as errMsg:
+            print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
+                  "failed with message: " + str(errMsg)
+
+        # Get information about internal and external USB devices.
+        try:
+            lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
+            rawDict['lsusb'] = str(lsusbData)
+        except OSError as errMsg:
+            print "WARNING: USB device info unavailable (including webcam). Execution of lsusb command " \
+                  "failed with message: " + str(errMsg)
+
+        # Get power supply (battery) information from upower.
+        try:
+            upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
+            rawDict['upower'] = str(upowerData)
+        except OSError as errMsg:
+            print "WARNING: Battery information unavailable. Execution of upower command failed with " \
+                  "message: " + str(errMsg)
+
+    return rawDict
+
+
+def storeRawData(rawDict):
+    assert not RAW_DATA_WAS_LOADED_FROM_FILE, "Loading raw data and then storing it again doesn't make any sense."
+
+
+def processCommandLineArguments():
+    global debugMode
+
+    for item in sys.argv[1:]:
+        if item == '-d' or item == '--debug':
+            debugMode = True
 
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
+try:
+    processCommandLineArguments()
 
-# DEBUG: currently there are no command-line arguments.
-# processCommandLineArguments()
+    # Fetch all the raw data describing the machine.
+    rawDict = getRawData()
+    if not RAW_DATA_WAS_LOADED_FROM_FILE:
+        storeRawData(rawDict)
 
-# Initialize machine description with blank fields.
-machine = dict()
-for fieldName in fieldNames:
-    machine[fieldName] = Field(fieldName)
+    # Initialize machine description with blank fields.
+    machine = dict()
+    for fieldName in fieldNames:
+        machine[fieldName] = Field(fieldName)
 
-# Initialize the string that will contain all the raw data.
-rawFileContents = ''
+    # Initialize the string that will contain all the raw data.
+    rawFileContents = ''
 
-# rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-rawLSHWData = readLSHW(machine)
-rawLSBReleaseData = readLSBRelease(machine)
-rawGetConfData = readGetconf(machine)
-rawUPowerData = readUPower(machine)
-rawCPUFreqData = readCPUFreq(machine)
-rawLSUSBData = readLSUSB(machine)
-# readLSUSB(machine, "testdata/lsusb_chicony.out")
-printBuildSheet(machine)
-createODSFile(machine, 'template.ods')
+    # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
+    rawLSHWData = readLSHW(machine)
+    rawLSBReleaseData = readLSBRelease(machine)
+    rawGetConfData = readGetconf(machine)
+    rawUPowerData = readUPower(machine)
+    rawCPUFreqData = readCPUFreq(machine)
+    rawLSUSBData = readLSUSB(machine)
+    # readLSUSB(machine, "testdata/lsusb_chicony.out")
+    printBuildSheet(machine)
+    createODSFile(machine, 'template.ods')
 
-rawFileContents += '{{{lshw data}}}' + '\n' + rawLSHWData + '\n\n'
-rawFileContents += '{{{lsusb data}}}' + '\n' + rawLSUSBData + '\n\n'
-rawFileContents += '{{{upower data}}}' + '\n' + rawUPowerData + '\n\n'
-rawFileContents += '{{{lsbrelease data}}}' + '\n' + rawLSBReleaseData + '\n\n'
-rawFileContents += '{{{getconf data}}}' + '\n' + rawGetConfData + '\n\n'
-rawFileContents += '{{{cpufreq data}}}' + '\n' + rawCPUFreqData + '\n\n'
+    rawFileContents += '{{{lshw data}}}' + '\n' + rawLSHWData + '\n\n'
+    rawFileContents += '{{{lsusb data}}}' + '\n' + rawLSUSBData + '\n\n'
+    rawFileContents += '{{{upower data}}}' + '\n' + rawUPowerData + '\n\n'
+    rawFileContents += '{{{lsbrelease data}}}' + '\n' + rawLSBReleaseData + '\n\n'
+    rawFileContents += '{{{getconf data}}}' + '\n' + rawGetConfData + '\n\n'
+    rawFileContents += '{{{cpufreq data}}}' + '\n' + rawCPUFreqData + '\n\n'
 
-rawFile = open(machine['machine id'].value() + '.txt', 'w')
-rawFile.write(rawFileContents)
-rawFile.close()
-#
-# # DEBUG: OTHER POSSIBLE DATA PROVIDERS: dmidecode, /dev, /sys, "hdparm -I /dev/sd?" (tells you HDD info, like SATA vs IDE).
-#
+    rawFile = open(machine['machine id'].value() + '.txt', 'w')
+    rawFile.write(rawFileContents)
+    rawFile.close()
+
+# Catch all exceptions so user won't see traceback dump.
+except:
+    etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
+    if debugMode:
+        # If debug mode is active then dump the traceback.
+        sys.excepthook(etype, evalue, etrace)
+    print "ERROR: " + str(etype)
+    print "MESSAGE: " + str(evalue) + "\n"
+    exit(1)
+
+
