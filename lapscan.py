@@ -23,6 +23,8 @@
 #       The raw file already exists and needs to be overwritten (not appended).
 #       The ods file already exists and needs to be overwritten (not appended).
 #   Check that you are correctly differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?".
+#   Make sure it can identify when a hard drive is an SSD. That info needs to be highlighted, particularly when a
+#       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
 
 
 # Evaluations to be Made
@@ -449,18 +451,20 @@ def readUPower(machine):
     return rawData
 
 
-def getRawData(rawFilePath=None):
+# Read in all the raw data from the various data sources.
+def readRawData(rawFilePath=None):
     global RAW_DATA_WAS_LOADED_FROM_FILE
     rawDict = dict()
 
     if rawFilePath is not None:
         RAW_DATA_WAS_LOADED_FROM_FILE = True
-
-    if rawFilePath is None:
+        # INSERT CODE: load raw data from the file at rawFilePath.
+    else:
         RAW_DATA_WAS_LOADED_FROM_FILE = False
         # Get CPU speed.
         try:
-            rawData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
+            rawCPUInfoData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
+            rawDict['cpuinfo_max_freq'] = rawCPUInfoData
         except IOError as errMsg:
             print "WARNING: CPU frequency could not be determined. Unable to access the cpuinfo_max_freq " \
                   "system file because: " + str(errMsg)
@@ -507,8 +511,20 @@ def getRawData(rawFilePath=None):
     return rawDict
 
 
-def storeRawData(rawDict):
+def writeRawData(rawDict, filePath):
     assert not RAW_DATA_WAS_LOADED_FROM_FILE, "Loading raw data and then storing it again doesn't make any sense."
+
+    # Initialize the string that will contain all the raw data.
+    rawFileContents = ''
+
+    # Construct a long string of all raw data text.
+    for key in rawDict.keys():
+        rawFileContents += '{{{' + key + '}}}\n' + rawDict[key] + '\n\n'
+
+    # Write the raw data to file.
+    rawFile = open(filePath, 'w')
+    rawFile.write(rawFileContents)
+    rawFile.close()
 
 
 def processCommandLineArguments():
@@ -525,17 +541,12 @@ try:
     processCommandLineArguments()
 
     # Fetch all the raw data describing the machine.
-    rawDict = getRawData()
-    if not RAW_DATA_WAS_LOADED_FROM_FILE:
-        storeRawData(rawDict)
+    rawDict = readRawData()
 
     # Initialize machine description with blank fields.
     machine = dict()
     for fieldName in fieldNames:
         machine[fieldName] = Field(fieldName)
-
-    # Initialize the string that will contain all the raw data.
-    rawFileContents = ''
 
     # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
     rawLSHWData = readLSHW(machine)
@@ -548,17 +559,6 @@ try:
     printBuildSheet(machine)
     createODSFile(machine, 'template.ods')
 
-    rawFileContents += '{{{lshw data}}}' + '\n' + rawLSHWData + '\n\n'
-    rawFileContents += '{{{lsusb data}}}' + '\n' + rawLSUSBData + '\n\n'
-    rawFileContents += '{{{upower data}}}' + '\n' + rawUPowerData + '\n\n'
-    rawFileContents += '{{{lsbrelease data}}}' + '\n' + rawLSBReleaseData + '\n\n'
-    rawFileContents += '{{{getconf data}}}' + '\n' + rawGetConfData + '\n\n'
-    rawFileContents += '{{{cpufreq data}}}' + '\n' + rawCPUFreqData + '\n\n'
-
-    rawFile = open(machine['machine id'].value() + '.txt', 'w')
-    rawFile.write(rawFileContents)
-    rawFile.close()
-
 # Catch all exceptions so user won't see traceback dump.
 except:
     etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
@@ -569,4 +569,5 @@ except:
     print "MESSAGE: " + str(evalue) + "\n"
     exit(1)
 
-
+finally:
+    writeRawData(rawDict, machine['machine id'].value() + '.txt')
