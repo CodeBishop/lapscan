@@ -55,6 +55,7 @@ import re
 import subprocess
 import sys
 import os
+import stat
 import math
 import zipfile
 
@@ -62,6 +63,7 @@ FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sh
 COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
+DEFAULT_SYSTEM_ID = "unidentified_system"
 
 debugMode = False
 
@@ -69,16 +71,19 @@ debugMode = False
 class Field:
     def __init__(self, subfieldName):
         self.name = subfieldName
-        self.m_value = ""
+        if subfieldName == "system id":
+            self.m_value = DEFAULT_SYSTEM_ID
+        else:
+            self.m_value = ""
         self.m_status = FIELD_NOT_INITIALIZED
 
     def setValue(self, val):
-        assert type(val) == str
+        assert type(val) == str, "Field.setValue() given non-string."
         self.m_value = sanitizeString(val)
         self.m_status = FIELD_HAS_DATA
 
     def setRawValue(self, val):
-        assert type(val) == str
+        assert type(val) == str, "Field.setRawValue() given non-string."
         self.m_value = val
         self.m_status = FIELD_HAS_DATA
 
@@ -229,26 +234,6 @@ def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
-# Fill-in a build sheet given a template.
-def createODSFile(mach, templateFilename, outputFilename=None):
-    if not outputFilename:
-        if mach['system id'].status() == FIELD_HAS_DATA:
-            outputFilename = machine['system id'].value() + '.ods'
-        else:
-            outputFilename = 'output.ods'
-    odsInput = zipfile.ZipFile (templateFilename, 'r')
-    odsOutput = zipfile.ZipFile (outputFilename, 'w')
-    for fileHandle in odsInput.infolist():
-        fileData = odsInput.read(fileHandle.filename)
-        if fileHandle.filename == 'content.xml':
-            for fieldName in fieldNames:
-                field = mach[fieldName]
-                fileData = fileData.replace('{' + fieldName + '}', field.value())
-        odsOutput.writestr(fileHandle, fileData)
-    odsOutput.close()
-    odsInput.close()
-
-
 # Interpret the identifying information of the system using the dmidecode output.
 def interpretDmidecode(rawDict, mach):
     # Get system make, model and serial number.
@@ -268,10 +253,10 @@ def interpretDmidecode(rawDict, mach):
     systemID = (systemMake + '_' + systemModel + '__' + systemSerial).replace(' ', '_')
 
     # Store the values (stored raw because they were already sanitized above).
-    machine['system make'].setRawValue(systemMake)
-    machine['system model'].setRawValue(systemModel)
-    machine['system serial'].setRawValue(systemSerial)
-    machine['system id'].setRawValue(systemID)
+    mach['system make'].setRawValue(systemMake)
+    mach['system model'].setRawValue(systemModel)
+    mach['system serial'].setRawValue(systemSerial)
+    mach['system id'].setRawValue(systemID)
 
 
 def readCPUFreq(mach):
@@ -462,12 +447,13 @@ def terminalCommand(command):
 
 # Read in all the raw data from the various data sources.
 def readRawData(rawFilePath=None):
-    rawDict = dict()
 
     if rawFilePath:
-        rawDict['raw_file_path'] = rawFilePath
-        # INSERT CODE: load raw data from the file at rawFilePath.
+        rawDict = readRawDataFromFile(rawFilePath)
+
     else:
+        rawDict = dict()
+
         # Get dmidecode info describing the system's make and model and such.
         try:
             rawDict['dmidecode_system_make'] = terminalCommand("dmidecode -s system-manufacturer")
@@ -529,16 +515,55 @@ def readRawData(rawFilePath=None):
     return rawDict
 
 
+# Read in all the raw data from a pre-made raw data file.
+def readRawDataFromFile(rawFilePath):
+    # Create the raw dictionary.
+    rawDict = dict()
+    rawDict['raw_file_source'] = rawFilePath
+
+    # Load the previously written raw file.
+    data = open(rawFilePath).read()
+
+    # Restore the raw file into the dictionary.
+    keySearch = re.findall(r"{{{(.*)}}}", data)
+    valSearch = re.findall(r"}}}\n([\s\S]*?)\n\n(?:(?:{{{)|(?:$))", data)
+    if keySearch and valSearch and len(keySearch) == len(valSearch):
+        for i in range(len(keySearch)):
+            rawDict[keySearch[i]] = valSearch[i]
+    else:
+        assert False, "Unable to parse raw data file: " + rawFilePath
+
+    return rawDict
+
+
+# Fill-in a build sheet given a template.
+def writeODSFile(mach, templateFilename, outputFilename=None):
+    if not outputFilename:
+        outputFilename = mach['system id'].value() + '.ods'
+    odsInput = zipfile.ZipFile (templateFilename, 'r')
+    odsOutput = zipfile.ZipFile (outputFilename, 'w')
+    for fileHandle in odsInput.infolist():
+        fileData = odsInput.read(fileHandle.filename)
+        if fileHandle.filename == 'content.xml':
+            for fieldName in fieldNames:
+                field = mach[fieldName]
+                fileData = fileData.replace('{' + fieldName + '}', field.value())
+        odsOutput.writestr(fileHandle, fileData)
+    odsOutput.close()
+    odsInput.close()
+    os.chmod(outputFilename, 0777)
+
+
 def writeRawData(rawDict, filePath):
-    if "raw_file_path" in rawDict:
-        print "Raw data was loaded from a file and will not be rewritten to a file."
+    if "raw_file_source" in rawDict:
+        print "Raw file not created because input data was taken from a raw file rather than from this machine."
         return
 
     # Initialize the string that will contain all the raw data.
     rawFileContents = ''
 
     # Construct a long string of all raw data text.
-    for key in rawDict.keys():
+    for key in sorted(rawDict.keys()):
         rawFileContents += '{{{' + key + '}}}\n' + rawDict[key] + '\n\n'
 
     # Write the raw data to file.
@@ -554,49 +579,57 @@ def processCommandLineArguments():
         if item == '-d' or item == '--debug':
             debugMode = True
 
+
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
-try:
-    processCommandLineArguments()
+def main():
+    try:
+        # rawDict = readRawDataFromFile("LENOVO_ThinkPad_R400_R835X72.txt")
 
-    # Initialize an empty machine description.
-    machine = dict()
-    for fieldName in fieldNames:
-        machine[fieldName] = Field(fieldName)
-    machine['system id'].setValue("unidentified_system")
+        processCommandLineArguments()
 
-    # Fetch all the raw data describing the machine.
-    rawDict = readRawData()
+        # Initialize an empty machine description.
+        machine = dict()
+        for fieldName in fieldNames:
+            machine[fieldName] = Field(fieldName)
 
-    # Determine a system id for use as a filename.
-    interpretDmidecode(rawDict, machine)
+        # Fetch all the raw data describing the machine.
+        rawDict = readRawData()
 
-    # Save a copy of all the raw data.
-    writeRawData(rawDict, machine['system id'].value() + '.txt')
+        # Interpret dmidecode first so the system will have a proper id.
+        interpretDmidecode(rawDict, machine)
 
-    # Interpret all the rest of the raw data.
+        # Save a copy of all the raw data.
+        writeRawData(rawDict, machine['system id'].value() + '.txt')
 
-    # DEBUG: All these read calls are deprecated.
-    # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-    # rawLSHWData = readLSHW(machine)
-    # rawLSBReleaseData = readLSBRelease(machine)
-    # rawGetConfData = readGetconf(machine)
-    # rawUPowerData = readUPower(machine)
-    # rawCPUFreqData = readCPUFreq(machine)
-    # rawLSUSBData = readLSUSB(machine)
-    # readLSUSB(machine, "testdata/lsusb_chicony.out")
+        # Interpret all the rest of the raw data.
 
-    # Output our program's findings.
-    printBuildSheet(machine)
-    createODSFile(machine, 'template.ods')
+        # DEBUG: All these read calls are deprecated.
+        # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
+        # rawLSHWData = readLSHW(machine)
+        # rawLSBReleaseData = readLSBRelease(machine)
+        # rawGetConfData = readGetconf(machine)
+        # rawUPowerData = readUPower(machine)
+        # rawCPUFreqData = readCPUFreq(machine)
+        # rawLSUSBData = readLSUSB(machine)
+        # readLSUSB(machine, "testdata/lsusb_chicony.out")
 
-# Catch all exceptions so user won't see traceback dump.
-except:
-    etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
-    if debugMode:
-        # If debug mode is active then dump the traceback.
-        sys.excepthook(etype, evalue, etrace)
-    print "ERROR: " + str(etype)
-    print "MESSAGE: " + str(evalue) + "\n"
-    exit(1)
+        # Output our program's findings.
+        printBuildSheet(machine)
+        writeODSFile(machine, 'template.ods')
+
+    # Catch-and-release assertion errors.
+    except AssertionError as errMsg:
+        print "ERROR: " + str(errMsg) + '\n'
+
+    # Catch all other exceptions so the user won't see traceback dump.
+    except:
+        etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
+        if debugMode:
+            # If debug mode is active then dump the traceback.
+            sys.excepthook(etype, evalue, etrace)
+        print "ERROR: " + str(etype)
+        print "MESSAGE: " + str(evalue) + "\n"
+
+main()
