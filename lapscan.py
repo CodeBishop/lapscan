@@ -25,6 +25,8 @@
 #   Check that you are correctly differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?".
 #   Make sure it can identify when a hard drive is an SSD. That info needs to be highlighted, particularly when a
 #       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
+#   Suppress all warning messages produced by not being sudo.
+#   Make the program not save its output files as sudo-owned (and therefore locked).
 
 
 # Evaluations to be Made
@@ -44,23 +46,10 @@
 #   Clean the laptop, put FreeGeek logo sticker and ID sticker on it. Record it in the build book.
 
 
-# Terminology
-#   Field:
-#       A box on the build sheet consisting of an case-insensitive ID string and a data string. For example:
-#           "Volume control", "OK (   )  Fn + F10  F11  F12"
-#           The ID string is case-insensitive but should otherwise precisely match the name on the printed build sheets.
-#   Sub-field:
-#       A piece of data about a machine such as cpu speed in GHZ or the size of the second DIMM in GB.
-#       A sub-field is a list of pairs of strings, each pair is (value, source).
-#       The name of a sub-field should include its units-type (GB, mhz, etc), its value should not.
-#   Machine:
-#       Encapsulation of a dictionary of sub-fields keyed on a case-insensitive string.
-#       Manufactures Fields on-the-fly.
-#       Prints a build sheet to console by calling its field(id) methods.
-#       Constructs a build spreadsheet by calling its field(id) methods.
-#   DataProvider:
-#       Encapsulation of a date source such a /etc/release or the lspci utility.
-#       The populate(machine) method adds (value, source) pairs to a the sub-fields of a machine.
+# Color codes for printing in color to the terminal.
+#   default color \033[00m
+#   red \033[91m   green \033[92m   yellow \033[93m   magenta \033[94m   purple \033[95m   cyan \033[96m   gray \033[97m
+
 
 import re
 import subprocess
@@ -73,25 +62,8 @@ FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sh
 COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
-RAW_DATA_WAS_LOADED_FROM_FILE = False
 
 debugMode = False
-
-# Color printing functions. DEBUG: THESE CAN BE DELETED.
-# def printred(prt): print("\033[91m {}\033[00m" .format(prt)),
-# def printgreen(prt): print("\033[92m {}\033[00m" .format(prt)),
-# def printyellow(prt): print("\033[93m {}\033[00m" .format(prt)),
-# def printmagenta(prt): print("\033[94m {}\033[00m" .format(prt)),
-# def printpurple(prt): print("\033[95m {}\033[00m" .format(prt)),
-# def printcyan(prt): print("\033[96m {}\033[00m" .format(prt)),
-# def printgrey(prt): print("\033[97m {}\033[00m" .format(prt)),
-# def redtext(txt): return "\033[91m" + txt + "\033[0m"
-# def greentext(txt): return "\033[92m" + txt + "\033[0m"
-# def yellowtext(txt): return "\033[93m" + txt + "\033[0m"
-# def magentatext(txt): return "\033[94m" + txt + "\033[0m"
-# def purpletext(txt): return "\033[95m" + txt + "\033[0m"
-# def cyantext(txt): return "\033[96m" + txt + "\033[0m"
-# def greytext(txt): return "\033[97m" + txt + "\033[0m"
 
 
 class Field:
@@ -122,11 +94,12 @@ class Field:
 
 # Words that should be stripped out of hardware fields before displaying them.
 junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
-            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection'
+            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection', 'computer'
 
-camelCaseNames = 'Lenovo', 'Toshiba'
+# Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
+correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba"}
 
-fieldNames = 'os version', 'os bit depth', 'machine make', 'machine model', 'machine serial', 'machine id', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
+fieldNames = 'os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial', 'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
              'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
              'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
              'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
@@ -142,13 +115,19 @@ def sanitizeString(string):
     # Remove junk words like "corporation", "ltd", etc
     for word in junkWords:
         string = re.sub('(?i)' + word, '', string)
-    # Fix all-caps brand and model names.
-    for word in camelCaseNames:
-        string = re.sub('(?i)' + word, word, string)
+    # Fix words that can be written more neatly.
+    for badWord in correctableWords.keys():
+        goodWord = correctableWords[badWord]
+        string = re.sub('(?i)' + badWord, goodWord, string)
     # Remove junk punctuation.
     string = re.sub(',', '', string)
     string = re.sub('\[', '', string)
     string = re.sub('\]', '', string)
+    return stripExcessWhitespace(string)
+
+
+# Reduce multiple whitespaces to a single space and eliminate leading and trailing whitespace.
+def stripExcessWhitespace(string):
     # Reduce multiple whitespace sections to a single space.
     string = re.sub('\s\s+', ' ', string)
     # Remove leading and trailing whitespace.
@@ -164,7 +143,7 @@ def printBuildSheet(mach):
     osVersion = mach['os version'].value() + " " + mach['os bit depth'].value() + "-Bit"
 
     # Construct the strings that describe the machine in VCN Build Sheet format.
-    modelDescription = mach['machine make'].value() + ' ' + mach['machine model'].value()
+    modelDescription = mach['system make'].value() + ' ' + mach['system model'].value()
 
     cpuDescription = ''
     if mach['cpu make'].status() == FIELD_HAS_DATA:
@@ -178,7 +157,6 @@ def printBuildSheet(mach):
     ramDescription = mach['ram total'].value() + 'Gb = ' + mach['dimm0 size'].value() + ' + ' \
         + mach['dimm1 size'].value() + "Gb " + mach['ddr'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
 
-    # DEBUG: This should be confirming SATA is the connection method.
     hddDescription = mach['hdd gb'].value() + 'Gb '
     if mach['hdd connector'].status() == FIELD_HAS_DATA:
         hddDescription += mach['hdd connector'].value() + ' '
@@ -254,8 +232,8 @@ def printBuildSheet(mach):
 # Fill-in a build sheet given a template.
 def createODSFile(mach, templateFilename, outputFilename=None):
     if not outputFilename:
-        if mach['machine id'].status() == FIELD_HAS_DATA:
-            outputFilename = machine['machine id'].value() + '.ods'
+        if mach['system id'].status() == FIELD_HAS_DATA:
+            outputFilename = machine['system id'].value() + '.ods'
         else:
             outputFilename = 'output.ods'
     odsInput = zipfile.ZipFile (templateFilename, 'r')
@@ -269,6 +247,31 @@ def createODSFile(mach, templateFilename, outputFilename=None):
         odsOutput.writestr(fileHandle, fileData)
     odsOutput.close()
     odsInput.close()
+
+
+# Interpret the identifying information of the system using the dmidecode output.
+def interpretDmidecode(rawDict, mach):
+    # Get system make, model and serial number.
+    systemMake = sanitizeString(rawDict['dmidecode_system_make'])
+    systemModel = sanitizeString(rawDict['dmidecode_system_model'])
+    systemSerial = stripExcessWhitespace(rawDict['dmidecode_system_serial'])
+
+    # Correct for Lenovo putting their system model under 'version'.
+    if systemMake.lower() == "lenovo":
+        systemModel = sanitizeString(rawDict['dmidecode_system_version'])
+
+    # Correct for the ugly name of Asus.
+    if systemMake.lower() == 'asustek':
+        systemMake = 'Asus'
+
+    # Construct a system identifier from the make, model and serial number.
+    systemID = (systemMake + '_' + systemModel + '__' + systemSerial).replace(' ', '_')
+
+    # Store the values (stored raw because they were already sanitized above).
+    machine['system make'].setRawValue(systemMake)
+    machine['system model'].setRawValue(systemModel)
+    machine['system serial'].setRawValue(systemSerial)
+    machine['system id'].setRawValue(systemID)
 
 
 def readCPUFreq(mach):
@@ -299,21 +302,21 @@ def readLSHW(machine, testFile=None):
         lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
         rawData = str(lshwData)
 
-    # Get machine make, model and serial number.
+    # Get system make, model and serial number.
     machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
     machineModel = re.search(r"product: ([\w ]+)", lshwData).groups()[0]
     machineSerial = re.search(r"serial: ([\w ]+)", lshwData).groups()[0]
-    # Correct for Lenovo putting their machine model under 'version'.
+    # Correct for Lenovo putting their system model under 'version'.
     if machineMake.lower() == "lenovo":
         machineModel = re.search(r"version: ([\w ]+)", lshwData).groups()[0]
     # Correct for the ugly name of Asus.
     if machineMake.lower() == 'asustek':
         machineMake = 'Asus'
     machineID = (machineMake + '_' + machineModel + '_' + machineSerial).replace(' ', '_')
-    machine['machine make'].setValue(machineMake)
-    machine['machine model'].setValue(machineModel)
-    machine['machine serial'].setRawValue(machineSerial)
-    machine['machine id'].setRawValue(machineID)
+    machine['system make'].setValue(machineMake)
+    machine['system model'].setValue(machineModel)
+    machine['system serial'].setRawValue(machineSerial)
+    machine['system id'].setRawValue(machineID)
 
     # Find start of LSHW section on CPU description.
     cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
@@ -451,16 +454,30 @@ def readUPower(machine):
     return rawData
 
 
+# Get the output from a terminal command.
+def terminalCommand(command):
+    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE).communicate()
+    return output
+
+
 # Read in all the raw data from the various data sources.
 def readRawData(rawFilePath=None):
-    global RAW_DATA_WAS_LOADED_FROM_FILE
     rawDict = dict()
 
-    if rawFilePath is not None:
-        RAW_DATA_WAS_LOADED_FROM_FILE = True
+    if rawFilePath:
+        rawDict['raw_file_path'] = rawFilePath
         # INSERT CODE: load raw data from the file at rawFilePath.
     else:
-        RAW_DATA_WAS_LOADED_FROM_FILE = False
+        # Get dmidecode info describing the system's make and model and such.
+        try:
+            rawDict['dmidecode_system_make'] = terminalCommand("dmidecode -s system-manufacturer")
+            rawDict['dmidecode_system_model'] = terminalCommand("dmidecode -s system-product-name")
+            rawDict['dmidecode_system_version'] = terminalCommand("dmidecode -s system-version")
+            rawDict['dmidecode_system_serial'] = terminalCommand("dmidecode -s system-serial-number")
+        except OSError as errMsg:
+            print "WARNING: System make and model could not be determined. Execution of dmidecode failed " \
+                  "with message: " + str(errMsg)
+
         # Get CPU speed.
         try:
             rawCPUInfoData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
@@ -476,6 +493,7 @@ def readRawData(rawFilePath=None):
         except OSError as errMsg:
             print "WARNING: OS bit-depth could not be determined. Execution of getconf failed " \
                   "with message: " + str(errMsg)
+
         # Get Linux version information.
         try:
             LSBReleaseData, _ = subprocess.Popen("lsb_release -d".split(), stdout=subprocess.PIPE).communicate()
@@ -512,7 +530,9 @@ def readRawData(rawFilePath=None):
 
 
 def writeRawData(rawDict, filePath):
-    assert not RAW_DATA_WAS_LOADED_FROM_FILE, "Loading raw data and then storing it again doesn't make any sense."
+    if "raw_file_path" in rawDict:
+        print "Raw data was loaded from a file and will not be rewritten to a file."
+        return
 
     # Initialize the string that will contain all the raw data.
     rawFileContents = ''
@@ -540,22 +560,34 @@ def processCommandLineArguments():
 try:
     processCommandLineArguments()
 
-    # Fetch all the raw data describing the machine.
-    rawDict = readRawData()
-
-    # Initialize machine description with blank fields.
+    # Initialize an empty machine description.
     machine = dict()
     for fieldName in fieldNames:
         machine[fieldName] = Field(fieldName)
+    machine['system id'].setValue("unidentified_system")
 
+    # Fetch all the raw data describing the machine.
+    rawDict = readRawData()
+
+    # Determine a system id for use as a filename.
+    interpretDmidecode(rawDict, machine)
+
+    # Save a copy of all the raw data.
+    writeRawData(rawDict, machine['system id'].value() + '.txt')
+
+    # Interpret all the rest of the raw data.
+
+    # DEBUG: All these read calls are deprecated.
     # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
-    rawLSHWData = readLSHW(machine)
-    rawLSBReleaseData = readLSBRelease(machine)
-    rawGetConfData = readGetconf(machine)
-    rawUPowerData = readUPower(machine)
-    rawCPUFreqData = readCPUFreq(machine)
-    rawLSUSBData = readLSUSB(machine)
+    # rawLSHWData = readLSHW(machine)
+    # rawLSBReleaseData = readLSBRelease(machine)
+    # rawGetConfData = readGetconf(machine)
+    # rawUPowerData = readUPower(machine)
+    # rawCPUFreqData = readCPUFreq(machine)
+    # rawLSUSBData = readLSUSB(machine)
     # readLSUSB(machine, "testdata/lsusb_chicony.out")
+
+    # Output our program's findings.
     printBuildSheet(machine)
     createODSFile(machine, 'template.ods')
 
@@ -568,6 +600,3 @@ except:
     print "ERROR: " + str(etype)
     print "MESSAGE: " + str(evalue) + "\n"
     exit(1)
-
-finally:
-    writeRawData(rawDict, machine['machine id'].value() + '.txt')

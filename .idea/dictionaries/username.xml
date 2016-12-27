@@ -2,6 +2,7 @@
   <dictionary name="username">
     <words>
       <w>bluetooth</w>
+      <w>dmidecode</w>
       <w>lapscan</w>
       <w>lshw</w>
       <w>substrings</w>
