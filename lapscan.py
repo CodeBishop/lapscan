@@ -445,6 +445,11 @@ def terminalCommand(command):
     return output
 
 
+def interpretCPUFreq(rawDict, mach):
+    cpuFreq = float(rawDict["cpuinfo_max_freq"])
+    mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+
+
 # Read in all the raw data from the various data sources.
 def readRawData(rawFilePath=None):
 
@@ -604,6 +609,7 @@ def main():
         writeRawData(rawDict, machine['system id'].value() + '.txt')
 
         # Interpret all the rest of the raw data.
+        interpretCPUFreq(rawDict, machine)
 
         # DEBUG: All these read calls are deprecated.
         # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
