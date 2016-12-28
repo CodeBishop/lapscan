@@ -22,7 +22,7 @@
 #       The template file is not found.
 #       The raw file already exists and needs to be overwritten (not appended).
 #       The ods file already exists and needs to be overwritten (not appended).
-#   Check that you are correctly differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?".
+#   Check that you are differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?" (replace ? with letter).
 #   Make sure it can identify when a hard drive is an SSD. That info needs to be highlighted, particularly when a
 #       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
 #   Suppress all warning messages produced by not being sudo.
@@ -556,7 +556,7 @@ def writeODSFile(mach, templateFilename, outputFilename=None):
         odsOutput.writestr(fileHandle, fileData)
     odsOutput.close()
     odsInput.close()
-    os.chmod(outputFilename, 0777)
+    os.chmod(outputFilename, 0777)  # Make the ODS file writeable.
 
 
 def writeRawData(rawDict, filePath):
