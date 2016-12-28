@@ -236,6 +236,11 @@ def printBuildSheet(mach):
 
 # Interpret the identifying information of the system using the dmidecode output.
 def interpretDmidecode(rawDict, mach):
+    assert 'dmidecode_system_make' in rawDict and \
+           'dmidecode_system_model' in rawDict and \
+           'dmidecode_system_serial' in rawDict, \
+        "dmidecode data is missing. A unique system ID cannot be formed without the system make, model and serial."
+
     # Get system make, model and serial number.
     systemMake = sanitizeString(rawDict['dmidecode_system_make'])
     systemModel = sanitizeString(rawDict['dmidecode_system_model'])
@@ -453,7 +458,7 @@ def interpretCPUFreq(rawDict, mach):
 # Read in all the raw data from the various data sources.
 def readRawData(rawFilePath=None):
 
-    if rawFilePath:
+    if rawFilePath and not rawFilePath == "":
         rawDict = readRawDataFromFile(rawFilePath)
 
     else:
@@ -536,7 +541,9 @@ def readRawDataFromFile(rawFilePath):
         for i in range(len(keySearch)):
             rawDict[keySearch[i]] = valSearch[i]
     else:
-        assert False, "Unable to parse raw data file: " + rawFilePath
+        errMsg = str(len(keySearch)) + " {{{headers}}} and " + str(len(valSearch)) + " " \
+                 "bodies were found in raw data file: " + rawFilePath
+        assert False, errMsg
 
     return rawDict
 
@@ -579,10 +586,17 @@ def writeRawData(rawDict, filePath):
 
 def processCommandLineArguments():
     global debugMode
+    rawFileToLoad = ""
 
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
             debugMode = True
+        elif item[0] == '-':
+            assert False, "Unrecognized command option: " + item
+        else:
+            rawFileToLoad = item
+
+    return rawFileToLoad
 
 
 # # ***************************************************************************************
@@ -590,9 +604,7 @@ def processCommandLineArguments():
 # # ***************************************************************************************
 def main():
     try:
-        # rawDict = readRawDataFromFile("LENOVO_ThinkPad_R400_R835X72.txt")
-
-        processCommandLineArguments()
+        rawFileToLoad = processCommandLineArguments()
 
         # Initialize an empty machine description.
         machine = dict()
@@ -600,7 +612,10 @@ def main():
             machine[fieldName] = Field(fieldName)
 
         # Fetch all the raw data describing the machine.
-        rawDict = readRawData()
+        if not rawFileToLoad == "":
+            rawDict = readRawData(rawFileToLoad)
+        else:
+            rawDict = readRawData(None)
 
         # Interpret dmidecode first so the system will have a proper id.
         interpretDmidecode(rawDict, machine)
