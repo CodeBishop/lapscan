@@ -444,12 +444,6 @@ def readUPower(machine):
     return rawData
 
 
-# Get the output from a terminal command.
-def terminalCommand(command):
-    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE).communicate()
-    return output
-
-
 def interpretCPUFreq(rawDict, mach):
     cpuFreq = float(rawDict["cpuinfo_max_freq"])
     mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
@@ -476,48 +470,42 @@ def readRawData(rawFilePath=None):
 
         # Get CPU speed.
         try:
-            rawCPUInfoData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
-            rawDict['cpuinfo_max_freq'] = rawCPUInfoData
+            rawDict['cpuinfo_max_freq'] = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
         except IOError as errMsg:
             print "WARNING: CPU frequency could not be determined. Unable to access the cpuinfo_max_freq " \
                   "system file because: " + str(errMsg)
 
         # Get OS bit depth.
         try:
-            getConfData, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
-            rawDict['getconf'] = str(getConfData)
+            rawDict['getconf'] = str(terminalCommand("getconf LONG_BIT"))
         except OSError as errMsg:
             print "WARNING: OS bit-depth could not be determined. Execution of getconf failed " \
                   "with message: " + str(errMsg)
 
         # Get Linux version information.
         try:
-            LSBReleaseData, _ = subprocess.Popen("lsb_release -d".split(), stdout=subprocess.PIPE).communicate()
-            rawDict['lsb_release'] = str(LSBReleaseData)
+            rawDict['lsb_release'] = str(terminalCommand("lsb_release -d"))
         except OSError as errMsg:
             print "WARNING: Linux version could not be determined. Execution of lsb_release failed " \
                   "with message: " + str(errMsg)
 
         # Get bulk information about all hardware.
         try:
-            lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
-            rawDict['lshw'] = str(lshwData)
+            rawDict['lshw'] = str(terminalCommand("lshw"))
         except OSError as errMsg:
             print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
                   "failed with message: " + str(errMsg)
 
         # Get information about internal and external USB devices.
         try:
-            lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
-            rawDict['lsusb'] = str(lsusbData)
+            rawDict['lsusb'] = str(terminalCommand("lsusb"))
         except OSError as errMsg:
             print "WARNING: USB device info unavailable (including webcam). Execution of lsusb command " \
                   "failed with message: " + str(errMsg)
 
         # Get power supply (battery) information from upower.
         try:
-            upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
-            rawDict['upower'] = str(upowerData)
+            rawDict['upower'] = str(terminalCommand("upower --dump"))
         except OSError as errMsg:
             print "WARNING: Battery information unavailable. Execution of upower command failed with " \
                   "message: " + str(errMsg)
@@ -546,6 +534,12 @@ def readRawDataFromFile(rawFilePath):
         assert False, errMsg
 
     return rawDict
+
+
+# Get the output from a terminal command.
+def terminalCommand(command):
+    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE).communicate()
+    return output
 
 
 # Fill-in a build sheet given a template.
