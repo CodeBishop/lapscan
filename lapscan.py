@@ -27,6 +27,8 @@
 #       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
 #   Suppress all warning messages produced by not being sudo.
 #   Make the program not save its output files as sudo-owned (and therefore locked).
+#   See if lsusb -v can give you more info about a webcam such as its resolution.
+#   Consider using lscpu and putting info about number of cores and threads into the CPU description.
 
 
 # Evaluations to be Made
@@ -234,36 +236,6 @@ def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
-# Interpret the identifying information of the system using the dmidecode output.
-def interpretDmidecode(rawDict, mach):
-    assert 'dmidecode_system_make' in rawDict and \
-           'dmidecode_system_model' in rawDict and \
-           'dmidecode_system_serial' in rawDict, \
-        "dmidecode data is missing. A unique system ID cannot be formed without the system make, model and serial."
-
-    # Get system make, model and serial number.
-    systemMake = sanitizeString(rawDict['dmidecode_system_make'])
-    systemModel = sanitizeString(rawDict['dmidecode_system_model'])
-    systemSerial = stripExcessWhitespace(rawDict['dmidecode_system_serial'])
-
-    # Correct for Lenovo putting their system model under 'version'.
-    if systemMake.lower() == "lenovo":
-        systemModel = sanitizeString(rawDict['dmidecode_system_version'])
-
-    # Correct for the ugly name of Asus.
-    if systemMake.lower() == 'asustek':
-        systemMake = 'Asus'
-
-    # Construct a system identifier from the make, model and serial number.
-    systemID = (systemMake + '_' + systemModel + '__' + systemSerial).replace(' ', '_')
-
-    # Store the values (stored raw because they were already sanitized above).
-    mach['system make'].setRawValue(systemMake)
-    mach['system model'].setRawValue(systemModel)
-    mach['system serial'].setRawValue(systemSerial)
-    mach['system id'].setRawValue(systemID)
-
-
 def readCPUFreq(mach):
     rawData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
     cpuFreq = float(rawData)
@@ -444,9 +416,150 @@ def readUPower(machine):
     return rawData
 
 
+# Interpret the CPU frequency if the raw data is present.
 def interpretCPUFreq(rawDict, mach):
-    cpuFreq = float(rawDict["cpuinfo_max_freq"])
-    mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+    if "cpuinfo_max_freq" in rawDict:
+        cpuFreq = float(rawDict["cpuinfo_max_freq"])
+        mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+
+
+# Interpret the RAM information from dmidecode type 17 output.
+def interpretDmidecodeMemory(rawDict, mach):
+    if "dmidecode_memory" in rawDict:
+        # Build array of entries, one per RAM slot.
+        ramSlots = re.findall(r"(Handle [\s\S]*?)(?:(?:\n\n)|(?:$))", rawDict["dmidecode_memory"])
+
+        for slotInfo in ramSlots:
+            print slotInfo
+            print "KLWHFIUWHF8290P8FHAPIWUF"
+        assert False #DEBUG
+        # # Get RAM description
+        # ramSectionStart = lshwData[re.search(r"\*-memory", lshwData).start():]
+        # machine['ram total'].setValue(re.search(r"size: (\d*)", ramSectionStart).groups()[0])
+        # machine['ddr'].setValue(re.search(r"(DDR\d)", ramSectionStart).groups()[0])
+        # dimm0Section = lshwData[re.search(r"\*-bank:0", lshwData).start():]
+        # machine['dimm0 size'].setValue(re.search(r"size: (\d*)", dimm0Section).groups()[0])
+        # machine['ram mhz'].setValue(re.search(r"clock: (\d*)", dimm0Section).groups()[0])
+        # dimm1Section = lshwData[re.search(r"\*-bank:1", lshwData).start():]
+        # machine['dimm1 size'].setValue(re.search(r"size: (\d*)", dimm1Section).groups()[0])
+        #
+
+
+# Interpret the identifying information of the system using the dmidecode output.
+def interpretDmidecodeSystem(rawDict, mach):
+    assert 'dmidecode_system_make' in rawDict and \
+           'dmidecode_system_model' in rawDict and \
+           'dmidecode_system_serial' in rawDict, \
+        "dmidecode data is missing. A unique system ID cannot be formed without the system make, model and serial."
+
+    # Get system make, model and serial number.
+    systemMake = sanitizeString(rawDict['dmidecode_system_make'])
+    systemModel = sanitizeString(rawDict['dmidecode_system_model'])
+    systemSerial = stripExcessWhitespace(rawDict['dmidecode_system_serial'])
+
+    # Correct for Lenovo putting their system model under 'version'.
+    if systemMake.lower() == "lenovo":
+        systemModel = sanitizeString(rawDict['dmidecode_system_version'])
+
+    # Correct for the ugly name of Asus.
+    if systemMake.lower() == 'asustek':
+        systemMake = 'Asus'
+
+    # Construct a system identifier from the make, model and serial number.
+    systemID = (systemMake + '_' + systemModel + '__' + systemSerial).replace(' ', '_')
+
+    # Store the values (stored raw because they were already sanitized above).
+    mach['system make'].setRawValue(systemMake)
+    mach['system model'].setRawValue(systemModel)
+    mach['system serial'].setRawValue(systemSerial)
+    mach['system id'].setRawValue(systemID)
+
+
+# Interpret the lshw output if the raw data is present.
+def interpretLSHW(rawDict, mach):
+    if "lshw" in rawDict:
+        pass
+
+        # # Find start of LSHW section on CPU description.
+        # cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
+        #
+        # # Get CPU manufacturer.
+        # cpuDesc = re.search(r"vendor: (.*)\n", cpuSectionStart).groups()[0]
+        # machine['cpu make'].setValue(re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
+        #
+        # # Get CPU model description.
+        # model = re.search(r"product: (.*)\n", cpuSectionStart).groups()[0]
+        #
+        # # Extract CPU model from CPU model description by deleting undesired substrings.
+        # model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
+        # model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
+        # model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
+        # model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
+        # machine['cpu model'].setValue(model)
+        #
+        # # Get HDD description.
+        # hddSectionStart = lshwData[re.search(r"ATA Disk", lshwData).start():]
+        # lshwHddDdescription = re.search(r"product: ([\w ]*)", hddSectionStart).groups()[0]
+        # if lshwHddDdescription[:3] == 'WDC':
+        #     machine['hdd make'].setValue("Western Digital")
+        #     machine['hdd model'].setValue(lshwHddDdescription[4:])
+        # else:
+        #     machine['hdd make'].setValue(lshwHddDdescription)
+        # machine['hdd connector'].setValue('SATA')
+        # machine['hdd gb'].setValue(re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
+        #
+        # # Get optical drive description.
+        # cdromSearch = re.search(r"\*-cdrom", lshwData)
+        # if cdromSearch:
+        #     opticalSectionStart = lshwData[cdromSearch.start():]
+        #     if re.search(r"cd-rw", opticalSectionStart):
+        #         machine['cd type'].setValue('CD R/W')
+        #     if re.search(r"dvd-r", opticalSectionStart):
+        #         machine['dvd type'].setValue('DVD R/W')
+        #     if re.search(r"dvd-ram", opticalSectionStart):
+        #         machine['dvdram'].setValue('DVDRAM')
+        #     machine['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
+        # else:
+        #     machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
+        #
+        # # Get wifi hardware description.
+        # wifiSearch = re.search(r"Wireless interface", lshwData)
+        # if wifiSearch:
+        #     wifiSectionStart = lshwData[wifiSearch.start():]
+        #     wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
+        #     machine['wifi make'].setValue(wifiMake)
+        #
+        # # Get video hardware description (3D hardware if found, integrated hardware if not).
+        # videoSearch = re.search(r"3D controller", lshwData)
+        # if not videoSearch:
+        #     videoSearch = re.search(r"VGA compatible controller", lshwData)
+        # if videoSearch:
+        #     videoSection = lshwData[videoSearch.start():]
+        #     # Get the video make and model.
+        #     videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
+        #     videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
+        #     machine['video make'].setValue(videoMake)
+        #     machine['video model'].setValue(videoModel)
+        #
+        # # Get Ethernet hardware description.
+        # ethernetSearch = re.search(r"Ethernet interface", lshwData)
+        # if ethernetSearch:
+        #     ethernetSection = lshwData[ethernetSearch.start():]
+        #     # Get the ethernet make and model.
+        #     ethernetMake = re.search(r"vendor: (.*)\n", ethernetSection).groups()[0]
+        #     ethernetModel = re.search(r"product: (.*)\n", ethernetSection).groups()[0]
+        #     machine['ethernet make'].setValue(ethernetMake)
+        #     machine['ethernet model'].setValue(ethernetModel)
+        #
+        # # Get Audio hardware description.
+        # audioSearch = re.search(r"\*-multimedia", lshwData)
+        # if audioSearch:
+        #     audioSection = lshwData[audioSearch.start():]
+        #     # Get the audio make and model.
+        #     audioMake = re.search(r"vendor: (.*)\n", audioSection).groups()[0]
+        #     audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
+        #     machine['audio make'].setValue(audioMake)
+        #     machine['audio model'].setValue(audioModel)
 
 
 # Read in all the raw data from the various data sources.
@@ -466,6 +579,13 @@ def readRawData(rawFilePath=None):
             rawDict['dmidecode_system_serial'] = terminalCommand("dmidecode -s system-serial-number")
         except OSError as errMsg:
             print "WARNING: System make and model could not be determined. Execution of dmidecode failed " \
+                  "with message: " + str(errMsg)
+
+        # Get dmidecode info describing the system's RAM slots and their contents.
+        try:
+            rawDict['dmidecode_memory'] = terminalCommand("dmidecode -t 17")  # Type 17 is RAM.
+        except OSError as errMsg:
+            print "WARNING: System RAM could not be determined. Execution of dmidecode failed " \
                   "with message: " + str(errMsg)
 
         # Get CPU speed.
@@ -612,14 +732,14 @@ def main():
             rawDict = readRawData(None)
 
         # Interpret dmidecode first so the system will have a proper id.
-        interpretDmidecode(rawDict, machine)
+        interpretDmidecodeSystem(rawDict, machine)
 
         # Save a copy of all the raw data.
         writeRawData(rawDict, machine['system id'].value() + '.txt')
 
         # Interpret all the rest of the raw data.
         interpretCPUFreq(rawDict, machine)
-
+        interpretDmidecodeMemory(rawDict, machine)
         # DEBUG: All these read calls are deprecated.
         # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
         # rawLSHWData = readLSHW(machine)
