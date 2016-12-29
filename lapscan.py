@@ -161,7 +161,7 @@ def printBuildSheet(mach):
     if mach['cpu ghz'].status() == FIELD_HAS_DATA:
         cpuDescription += ' @ ' + mach['cpu ghz'].value() + ' Ghz'
 
-    ramDescription = mach['ram desc'].value() + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
+    ramDescription = mach['ram desc'].value() + ' ' + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
 
     hddDescription = mach['hdd gb'].value() + 'Gb '
     if mach['hdd connector'].status() == FIELD_HAS_DATA:
@@ -502,6 +502,11 @@ def interpretDmidecodeSystem(rawDict, mach):
     mach['system id'].setRawValue(systemID)
 
 
+# Interpret the lsb_release output to determine OS version.
+def interpretLSBRelease(rawDict, mach):
+    mach['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", rawDict['lsb_release']).groups()[0])
+
+
 # Interpret the lshw output if the raw data is present.
 def interpretLSHW(rawDict, mach):
     if "lshw" in rawDict:
@@ -767,6 +772,7 @@ def main():
         # Interpret all the rest of the raw data.
         interpretCPUFreq(rawDict, machine)
         interpretDmidecodeMemory(rawDict, machine)
+        interpretLSBRelease(rawDict, machine)
         # DEBUG: All these read calls are deprecated.
         # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
         # rawLSHWData = readLSHW(machine)
