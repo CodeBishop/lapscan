@@ -106,15 +106,15 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
 # Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba"}
 
-fieldNames = 'os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial', 'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram total', \
-             'dimm0 size', 'dimm1 size', 'ddr', 'ram mhz', 'hdd gb', 'hdd make', 'hdd model', 'hdd connector', 'cd type', \
-             'dvd type', 'optical make', 'dvdram', 'wifi make', 'wifi model', 'wifi modes', \
-             'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make', \
-             'bluetooth make', 'bluetooth model', 'video make', 'video model', \
-             'ethernet make', 'ethernet model', 'audio make', 'audio model', 'usb left', 'usb right', \
-             'usb front', 'usb back', 'vga ok', 'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', \
-             'volume ok', 'volume keys', 'headphone jack ok', 'microphone ok', 'microphone jacks', \
-             'media controls ok', 'media keys', 'lid closed description'
+# Define a partial list of the fields available (further ones may get appended elsewhere in the code).
+fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
+              'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc', 'hdd gb',
+              'hdd make', 'hdd model', 'hdd connector', 'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
+              'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
+              'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
+              'audio make', 'audio model', 'usb left', 'usb right', 'usb front', 'usb back', 'vga ok',
+              'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', 'volume ok', 'volume keys', 'headphone jack ok',
+              'microphone ok', 'microphone jacks', 'media controls ok', 'media keys', 'lid closed description']
 
 
 # Remove junk words, irrelevant punctuation and multiple spaces from a field string.
@@ -161,8 +161,7 @@ def printBuildSheet(mach):
     if mach['cpu ghz'].status() == FIELD_HAS_DATA:
         cpuDescription += ' @ ' + mach['cpu ghz'].value() + ' Ghz'
 
-    ramDescription = mach['ram total'].value() + 'Gb = ' + mach['dimm0 size'].value() + ' + ' \
-        + mach['dimm1 size'].value() + "Gb " + mach['ddr'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
+    ramDescription = mach['ram desc'].value() + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
 
     hddDescription = mach['hdd gb'].value() + 'Gb '
     if mach['hdd connector'].status() == FIELD_HAS_DATA:
@@ -299,7 +298,7 @@ def readLSHW(machine, testFile=None):
 
     # Get RAM description
     ramSectionStart = lshwData[re.search(r"\*-memory", lshwData).start():]
-    machine['ram total'].setValue(re.search(r"size: (\d*)", ramSectionStart).groups()[0])
+    machine['ram mb total'].setValue(re.search(r"size: (\d*)", ramSectionStart).groups()[0])
     machine['ddr'].setValue(re.search(r"(DDR\d)", ramSectionStart).groups()[0])
     dimm0Section = lshwData[re.search(r"\*-bank:0", lshwData).start():]
     machine['dimm0 size'].setValue(re.search(r"size: (\d*)", dimm0Section).groups()[0])
@@ -429,20 +428,48 @@ def interpretDmidecodeMemory(rawDict, mach):
         # Build array of entries, one per RAM slot.
         ramSlots = re.findall(r"(Handle [\s\S]*?)(?:(?:\n\n)|(?:$))", rawDict["dmidecode_memory"])
 
-        for slotInfo in ramSlots:
-            print slotInfo
-            print "KLWHFIUWHF8290P8FHAPIWUF"
-        assert False #DEBUG
-        # # Get RAM description
-        # ramSectionStart = lshwData[re.search(r"\*-memory", lshwData).start():]
-        # machine['ram total'].setValue(re.search(r"size: (\d*)", ramSectionStart).groups()[0])
-        # machine['ddr'].setValue(re.search(r"(DDR\d)", ramSectionStart).groups()[0])
-        # dimm0Section = lshwData[re.search(r"\*-bank:0", lshwData).start():]
-        # machine['dimm0 size'].setValue(re.search(r"size: (\d*)", dimm0Section).groups()[0])
-        # machine['ram mhz'].setValue(re.search(r"clock: (\d*)", dimm0Section).groups()[0])
-        # dimm1Section = lshwData[re.search(r"\*-bank:1", lshwData).start():]
-        # machine['dimm1 size'].setValue(re.search(r"size: (\d*)", dimm1Section).groups()[0])
-        #
+        # Take the memory type and speed from the first slot (since all slots should be identical anyways).
+        mach["ram type"].setValue(re.search(r"Type: (\w+)", ramSlots[0]).groups()[0])
+        mach["ram mhz"].setValue(re.search(r"Speed: (\d+) MHz", ramSlots[0]).groups()[0])
+
+        # Get the sizes of all the RAM components in the machine.
+        ramCount = 0  # Slot numbering is inconsistent so we re-number them from zero.
+        totalRam = 0
+        commonSize = 0  # Track whether all the RAM is the same size.
+        for slotDesc in ramSlots:
+            searchResult = re.search(r"Size: (\d+) MB", slotDesc)
+            if searchResult:
+                memName = "ram" + str(ramCount) + " mb"
+                memSize = searchResult.groups()[0]
+                if commonSize == 0:
+                    commonSize = int(memSize)
+                elif commonSize != int(memSize):
+                    commonSize = None
+                fieldNames.append(memName)
+                mach[memName] = Field(memName)
+                mach[memName].setValue(memSize)
+                ramCount += 1
+                totalRam += int(memSize)
+
+        # Start building the RAM description field.
+        ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
+
+        # If all the RAM is the same size then describe it as a multiple.
+        if commonSize:
+            ramDesc += str(ramCount) + " x " + str("%.0f" % (int(mach["ram0 mb"].value()) / 1024.0))
+
+        # If the RAM is not all the same size then describe it by summation.
+        else:
+            ramDesc += str("%.0f" % (int(mach["ram0 mb"].value()) / 1024.0))
+            for i in range(1, ramCount):
+                memName = "ram" + str(i) + " mb"
+                memSize = int(mach[memName].value())
+                ramDesc += " + " + str("%.0f" % (memSize / 1024.0))
+
+        # Finish building the RAM description field.
+        ramDesc += " Gb"
+
+        mach["ram desc"].setRawValue(ramDesc)
 
 
 # Interpret the identifying information of the system using the dmidecode output.
@@ -611,7 +638,7 @@ def readRawData(rawFilePath=None):
 
         # Get bulk information about all hardware.
         try:
-            rawDict['lshw'] = str(terminalCommand("lshw"))
+            pass #DEBUG rawDict['lshw'] = str(terminalCommand("lshw"))
         except OSError as errMsg:
             print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
                   "failed with message: " + str(errMsg)
@@ -666,8 +693,8 @@ def terminalCommand(command):
 def writeODSFile(mach, templateFilename, outputFilename=None):
     if not outputFilename:
         outputFilename = mach['system id'].value() + '.ods'
-    odsInput = zipfile.ZipFile (templateFilename, 'r')
-    odsOutput = zipfile.ZipFile (outputFilename, 'w')
+    odsInput = zipfile.ZipFile(templateFilename, 'r')
+    odsOutput = zipfile.ZipFile(outputFilename, 'w')
     for fileHandle in odsInput.infolist():
         fileData = odsInput.read(fileHandle.filename)
         if fileHandle.filename == 'content.xml':
