@@ -235,160 +235,18 @@ def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
-def interpretGetconf(rawDict, mach):
-    mach['os bit depth'].setValue(re.search(r"(\d*)\n", rawDict['getconf']).groups()[0])
-
-
-# Read and interpret lshw output.
-def readLSHW(machine, testFile=None):
-    if testFile:
-        lshwData = open(testFile).read()
-        rawData = 'Substitute data taken from ' + testFile
-    else:
-        lshwData, _ = subprocess.Popen("lshw".split(), stdout=subprocess.PIPE).communicate()  # DEBUG
-        rawData = str(lshwData)
-
-    # Get system make, model and serial number.
-    machineMake = re.search(r"vendor: ([\w\-]+)", lshwData).groups()[0]
-    machineModel = re.search(r"product: ([\w ]+)", lshwData).groups()[0]
-    machineSerial = re.search(r"serial: ([\w ]+)", lshwData).groups()[0]
-    # Correct for Lenovo putting their system model under 'version'.
-    if machineMake.lower() == "lenovo":
-        machineModel = re.search(r"version: ([\w ]+)", lshwData).groups()[0]
-    # Correct for the ugly name of Asus.
-    if machineMake.lower() == 'asustek':
-        machineMake = 'Asus'
-    machineID = (machineMake + '_' + machineModel + '_' + machineSerial).replace(' ', '_')
-    machine['system make'].setValue(machineMake)
-    machine['system model'].setValue(machineModel)
-    machine['system serial'].setRawValue(machineSerial)
-    machine['system id'].setRawValue(machineID)
-
-    # Find start of LSHW section on CPU description.
-    cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
-
-    # Get CPU manufacturer.
-    cpuDesc = re.search(r"vendor: (.*)\n", cpuSectionStart).groups()[0]
-    machine['cpu make'].setValue(re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
-
-    # Get CPU model description.
-    model = re.search(r"product: (.*)\n", cpuSectionStart).groups()[0]
-
-    # Extract CPU model from CPU model description by deleting undesired substrings.
-    model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
-    model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
-    model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
-    model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
-    machine['cpu model'].setValue(model)
-
-    # Get RAM description
-    ramSectionStart = lshwData[re.search(r"\*-memory", lshwData).start():]
-    machine['ram mb total'].setValue(re.search(r"size: (\d*)", ramSectionStart).groups()[0])
-    machine['ddr'].setValue(re.search(r"(DDR\d)", ramSectionStart).groups()[0])
-    dimm0Section = lshwData[re.search(r"\*-bank:0", lshwData).start():]
-    machine['dimm0 size'].setValue(re.search(r"size: (\d*)", dimm0Section).groups()[0])
-    machine['ram mhz'].setValue(re.search(r"clock: (\d*)", dimm0Section).groups()[0])
-    dimm1Section = lshwData[re.search(r"\*-bank:1", lshwData).start():]
-    machine['dimm1 size'].setValue(re.search(r"size: (\d*)", dimm1Section).groups()[0])
-
-    # Get HDD description.
-    hddSectionStart = lshwData[re.search(r"ATA Disk", lshwData).start():]
-    lshwHddDdescription = re.search(r"product: ([\w ]*)", hddSectionStart).groups()[0]
-    if lshwHddDdescription[:3] == 'WDC':
-        machine['hdd make'].setValue("Western Digital")
-        machine['hdd model'].setValue(lshwHddDdescription[4:])
-    else:
-        machine['hdd make'].setValue(lshwHddDdescription)
-    machine['hdd connector'].setValue('SATA')
-    machine['hdd gb'].setValue(re.search(r"size: \d+GiB \((\d*)", hddSectionStart).groups()[0])
-
-    # Get optical drive description.
-    cdromSearch = re.search(r"\*-cdrom", lshwData)
-    if cdromSearch:
-        opticalSectionStart = lshwData[cdromSearch.start():]
-        if re.search(r"cd-rw", opticalSectionStart):
-            machine['cd type'].setValue('CD R/W')
-        if re.search(r"dvd-r", opticalSectionStart):
-            machine['dvd type'].setValue('DVD R/W')
-        if re.search(r"dvd-ram", opticalSectionStart):
-            machine['dvdram'].setValue('DVDRAM')
-        machine['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
-    else:
-        machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
-
-    # Get wifi hardware description.
-    wifiSearch = re.search(r"Wireless interface", lshwData)
-    if wifiSearch:
-        wifiSectionStart = lshwData[wifiSearch.start():]
-        wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
-        machine['wifi make'].setValue(wifiMake)
-
-    # Get video hardware description (3D hardware if found, integrated hardware if not).
-    videoSearch = re.search(r"3D controller", lshwData)
-    if not videoSearch:
-        videoSearch = re.search(r"VGA compatible controller", lshwData)
-    if videoSearch:
-        videoSection = lshwData[videoSearch.start():]
-        # Get the video make and model.
-        videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
-        videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
-        machine['video make'].setValue(videoMake)
-        machine['video model'].setValue(videoModel)
-
-    # Get Ethernet hardware description.
-    ethernetSearch = re.search(r"Ethernet interface", lshwData)
-    if ethernetSearch:
-        ethernetSection = lshwData[ethernetSearch.start():]
-        # Get the ethernet make and model.
-        ethernetMake = re.search(r"vendor: (.*)\n", ethernetSection).groups()[0]
-        ethernetModel = re.search(r"product: (.*)\n", ethernetSection).groups()[0]
-        machine['ethernet make'].setValue(ethernetMake)
-        machine['ethernet model'].setValue(ethernetModel)
-
-    # Get Audio hardware description.
-    audioSearch = re.search(r"\*-multimedia", lshwData)
-    if audioSearch:
-        audioSection = lshwData[audioSearch.start():]
-        # Get the audio make and model.
-        audioMake = re.search(r"vendor: (.*)\n", audioSection).groups()[0]
-        audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
-        machine['audio make'].setValue(audioMake)
-        machine['audio model'].setValue(audioModel)
-
-    return rawData
-
-
-# Read and interpret lsusb output.
-def interpretLSUSB(rawDict, mach):
-    # Grab the description from any lsusb line with "webcam" in it
-    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
-
-    # If "webcam" wasn't found then try for "Chicony".
-    if not webcamSearchResult:
-        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
-
-    # If any match was found then use it.
-    if webcamSearchResult:
-        webcamMake = webcamSearchResult.groups()[0]
-        webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
-        mach['webcam make'].setValue(webcamMake)
-
-
-# Read and interpret "upower --dump" output.
-def readUPower(machine):
-    upowerData, _ = subprocess.Popen("upower --dump".split(), stdout=subprocess.PIPE).communicate()
-    rawData = str(upowerData)
-    if not re.search("power supply.*no", upowerData):
-        machine['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", upowerData).groups()[0])
-        machine['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", upowerData).groups()[0])
+# Interpret "upower --dump" output.
+def interpretUPower(rawDict, mach):
+    if not re.search("power supply.*no", rawDict['upower']):
+        mach['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", rawDict['upower']).groups()[0])
+        mach['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", rawDict['upower']).groups()[0])
         # The capacity value given by upower won't match match the energy-full / energy-full-design. Calculate manually.
-        percentage = float(machine['batt max'].value()) / float(machine['batt orig'].value())
+        percentage = float(mach['batt max'].value()) / float(mach['batt orig'].value())
         percentage = int(math.ceil(percentage * 100.0))
         # Upower's numbers sometimes show values > 100% and FreeGeek limits these to 100% in writing.
         if percentage > 100:
             percentage = 100
-        machine['batt percent'].setValue(str(percentage))
-    return rawData
+        mach['batt percent'].setValue(str(percentage))
 
 
 # Interpret the CPU frequency if the raw data is present.
@@ -476,6 +334,11 @@ def interpretDmidecodeSystem(rawDict, mach):
     mach['system model'].setRawValue(systemModel)
     mach['system serial'].setRawValue(systemSerial)
     mach['system id'].setRawValue(systemID)
+
+
+# Interpret the getconf data specifying whether this is a 32-bit or 64-bit OS.
+def interpretGetconf(rawDict, mach):
+    mach['os bit depth'].setValue(re.search(r"(\d*)\n", rawDict['getconf']).groups()[0])
 
 
 # Interpret the lsb_release output to determine OS version.
@@ -568,6 +431,22 @@ def interpretLSHW(rawDict, mach):
         #     audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
         #     machine['audio make'].setValue(audioMake)
         #     machine['audio model'].setValue(audioModel)
+
+
+# Read and interpret lsusb output.
+def interpretLSUSB(rawDict, mach):
+    # Grab the description from any lsusb line with "webcam" in it
+    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
+
+    # If "webcam" wasn't found then try for "Chicony".
+    if not webcamSearchResult:
+        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
+
+    # If any match was found then use it.
+    if webcamSearchResult:
+        webcamMake = webcamSearchResult.groups()[0]
+        webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
+        mach['webcam make'].setValue(webcamMake)
 
 
 # Read in all the raw data from the various data sources.
@@ -751,12 +630,12 @@ def main():
         interpretGetconf(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
         interpretLSUSB(rawDict, machine)
+        interpretUPower(rawDict, machine)
 
         # DEBUG: All these read calls are deprecated.
         # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
         # rawLSHWData = readLSHW(machine)
         # rawUPowerData = readUPower(machine)
-
 
         # Output our program's findings.
         printBuildSheet(machine)
