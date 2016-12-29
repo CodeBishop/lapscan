@@ -235,23 +235,8 @@ def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
-def readCPUFreq(mach):
-    rawData = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
-    cpuFreq = float(rawData)
-    mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
-    return rawData
-
-
-def readGetconf(machine):
-    rawData, _ = subprocess.Popen("getconf LONG_BIT".split(), stdout=subprocess.PIPE).communicate()
-    machine['os bit depth'].setValue(re.search(r"(\d*)\n", rawData).groups()[0])
-    return rawData
-
-
-def readLSBRelease(machine):
-    rawData, _ = subprocess.Popen("lsb_release -d".split(), stdout=subprocess.PIPE).communicate()
-    machine['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", rawData).groups()[0])
-    return rawData
+def interpretGetconf(rawDict, mach):
+    mach['os bit depth'].setValue(re.search(r"(\d*)\n", rawDict['getconf']).groups()[0])
 
 
 # Read and interpret lshw output.
@@ -374,28 +359,19 @@ def readLSHW(machine, testFile=None):
 
 
 # Read and interpret lsusb output.
-def readLSUSB(machine, testFile=None):
-    if testFile:
-        lsusbData = open(testFile).read()
-        rawData = 'Substitute data taken from ' + testFile
-    else:
-        lsusbData, _ = subprocess.Popen("lsusb", stdout=subprocess.PIPE).communicate()
-        rawData = str(lsusbData)
-
+def interpretLSUSB(rawDict, mach):
     # Grab the description from any lsusb line with "webcam" in it
-    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", lsusbData)
+    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
 
     # If "webcam" wasn't found then try for "Chicony".
     if not webcamSearchResult:
-        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", lsusbData)
+        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
 
     # If any match was found then use it.
     if webcamSearchResult:
         webcamMake = webcamSearchResult.groups()[0]
         webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
-        machine['webcam make'].setValue(webcamMake)
-
-    return rawData
+        mach['webcam make'].setValue(webcamMake)
 
 
 # Read and interpret "upower --dump" output.
@@ -772,16 +748,14 @@ def main():
         # Interpret all the rest of the raw data.
         interpretCPUFreq(rawDict, machine)
         interpretDmidecodeMemory(rawDict, machine)
+        interpretGetconf(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
+        interpretLSUSB(rawDict, machine)
+
         # DEBUG: All these read calls are deprecated.
         # rawLSHWData = readLSHW(machine, "testdata/lshw_thinkpadr400.out")
         # rawLSHWData = readLSHW(machine)
-        # rawLSBReleaseData = readLSBRelease(machine)
-        # rawGetConfData = readGetconf(machine)
         # rawUPowerData = readUPower(machine)
-        # rawCPUFreqData = readCPUFreq(machine)
-        # rawLSUSBData = readLSUSB(machine)
-        # readLSUSB(machine, "testdata/lsusb_chicony.out")
 
         # Output our program's findings.
         printBuildSheet(machine)
