@@ -2,9 +2,7 @@
 
 # TO DO
 #   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
-#   Write a camelCaseMaker() method that will search for known
-#   Add functionality to run Cheese and other tests and query the user how they went.
-#   Boot a MacBook and MacBook Pro with Ubuntu and pull all their outputs (lshw, lspci, lsusb, etc).
+#   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
 #   Test the program with blank input files to simulate all the different ways that re.search() might fail.
 #   Add functionality to store the raw console outputs as strings, ask the user at the end if everything was
 #   correct. If the user says no then ask them for an explanation and email it along with the raw data to myself.
@@ -26,9 +24,11 @@
 #   Make sure it can identify when a hard drive is an SSD. That info needs to be highlighted, particularly when a
 #       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
 #   Suppress all warning messages produced by not being sudo.
-#   Make the program not save its output files as sudo-owned (and therefore locked).
 #   See if lsusb -v can give you more info about a webcam such as its resolution.
 #   Consider using lscpu and putting info about number of cores and threads into the CPU description.
+#   Add a feature to ask the user if they would like to see the generated spreadsheet, if so then open it for them.
+#   Consider adding a stress test option.
+#   See if you can disable the screensaver and password automatically (for the store's convenience).
 
 
 # Evaluations to be Made
@@ -108,8 +108,11 @@ correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
-              'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc', 'hdd gb',
-              'hdd make', 'hdd model', 'hdd connector', 'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
+              'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc',
+              'hdd1 rpm', 'hdd1 mb', 'hdd1 model', 'hdd1 connector',
+              'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector',
+# EXAMPLE:    'SSD',       '20000'     , 'Sandisk'  , 'whatever',   'SATA'
+              'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
               'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
               'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
               'audio make', 'audio model', 'usb left', 'usb right', 'usb front', 'usb back', 'vga ok',
@@ -341,9 +344,31 @@ def interpretGetconf(rawDict, mach):
     mach['os bit depth'].setValue(re.search(r"(\d*)\n", rawDict['getconf']).groups()[0])
 
 
+# Interpret the hard drive info given by hdparm.
+def interpretHdparm(rawDict, mach):
+    driveNumber = 1
+    for devName in ['hdparm_hda', 'hdparm_sda', 'hdparm_sdb']:
+        if rawDict[devName] != "":
+            print "Checking " + devName
+            # Check that this is a fixed drive and not a removable USB drive.
+            if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
+                name = "hdd" + str(driveNumber)
+                result = re.search(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName])
+                if result:
+                    mach[name + " mb"].setValue(result.groups()[0])
+                    print devName + " is a fixed drive of size" #DEBUG
+                if devName[8:] == "hdparm_h":
+                    mach[name + " connector"] = "IDE"
+                else:
+                    mach[name + " connector"] = "SATA"
+
+    hddDesc = ""
+
+
+
 # Interpret the lsb_release output to determine OS version.
 def interpretLSBRelease(rawDict, mach):
-    mach['os version'].setValue(re.search(r"Description:[\t ]*(.*)\n", rawDict['lsb_release']).groups()[0])
+    mach['os version'].setValue(re.search(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release']).groups()[0])
 
 
 # Interpret the lshw output if the raw data is present.
@@ -506,8 +531,18 @@ def readRawData(rawFilePath=None):
         # Get information about internal and external USB devices.
         try:
             rawDict['lsusb'] = str(terminalCommand("lsusb"))
+            rawDict['lsusb_verbose'] = str(terminalCommand("lsusb -v"))
         except OSError as errMsg:
             print "WARNING: USB device info unavailable (including webcam). Execution of lsusb command " \
+                  "failed with message: " + str(errMsg)
+
+        # Get information about all hard drives.
+        try:
+            rawDict['hdparm_hda'] = str(terminalCommand("hdparm -I /dev/hda"))
+            rawDict['hdparm_sda'] = str(terminalCommand("hdparm -I /dev/sda"))
+            rawDict['hdparm_sdb'] = str(terminalCommand("hdparm -I /dev/sdb"))
+        except OSError as errMsg:
+            print "WARNING: Some hard drive information may unavailable. Execution of hdparm command " \
                   "failed with message: " + str(errMsg)
 
         # Get power supply (battery) information from upower.
@@ -628,6 +663,7 @@ def main():
         interpretCPUFreq(rawDict, machine)
         interpretDmidecodeMemory(rawDict, machine)
         interpretGetconf(rawDict, machine)
+        interpretHdparm(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
         interpretLSUSB(rawDict, machine)
         interpretUPower(rawDict, machine)
