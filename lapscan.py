@@ -69,6 +69,9 @@ DEFAULT_SYSTEM_ID = "unidentified_system"
 
 debugMode = False
 
+# Fetch the null device for routing error messages to so they don't clutter the console output.
+DEVNULL = open(os.devnull, 'w')
+
 
 class Field:
     def __init__(self, subfieldName):
@@ -104,13 +107,13 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
             '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection', 'computer'
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
-correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba"}
+correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
               'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc',
               'hdd1 rpm', 'hdd1 mb', 'hdd1 model', 'hdd1 connector',
-              'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector',
+              'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector', 'hdd desc',
 # EXAMPLE:    'SSD',       '20000'     , 'Sandisk'  , 'whatever',   'SATA'
               'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
               'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
@@ -166,10 +169,7 @@ def printBuildSheet(mach):
 
     ramDescription = mach['ram desc'].value() + ' ' + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
 
-    hddDescription = mach['hdd gb'].value() + 'Gb '
-    if mach['hdd connector'].status() == FIELD_HAS_DATA:
-        hddDescription += mach['hdd connector'].value() + ' '
-    hddDescription += mach['hdd make'].value() + ' ' + mach['hdd model'].value()
+    hddDescription = mach["hdd desc"].value()
 
     if mach['optical make'].status() == FIELD_NO_DATA_FOUND:
         opticalDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
@@ -347,23 +347,42 @@ def interpretGetconf(rawDict, mach):
 # Interpret the hard drive info given by hdparm.
 def interpretHdparm(rawDict, mach):
     driveNumber = 1
+    # Look for an IDE drive and one or two SATA drives.
     for devName in ['hdparm_hda', 'hdparm_sda', 'hdparm_sdb']:
         if rawDict[devName] != "":
-            print "Checking " + devName
-            # Check that this is a fixed drive and not a removable USB drive.
+            # If a found drive is a fixed drive (and not a removable USB drive).
             if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
                 name = "hdd" + str(driveNumber)
+                # Get the size of the hard drive.
                 result = re.search(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName])
                 if result:
                     mach[name + " mb"].setValue(result.groups()[0])
-                    print devName + " is a fixed drive of size" #DEBUG
+                # Get the model of the hard drive.
+                result = re.search(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
+                if result:
+                    mach[name + " model"].setValue(result.groups()[0])
+                # Note the drive connector type.
                 if devName[8:] == "hdparm_h":
-                    mach[name + " connector"] = "IDE"
+                    mach[name + " connector"].setValue("IDE")
                 else:
-                    mach[name + " connector"] = "SATA"
+                    mach[name + " connector"].setValue("SATA")
+            # Prepare to look for another drive.
+            driveNumber += 1
 
+    # Construct the hard drive description field.
     hddDesc = ""
-
+    for driveNumber in [1, 2]:
+        name = "hdd" + str(driveNumber)
+        # Check if hdd exists by checking for a connector value (since that entry is guaranteed to be present).
+        if mach[name + " connector"].value() != "":
+            # If there's a second drive then put a plus in the description.
+            if driveNumber == 2:
+                hddDesc += " + "
+            # Pull together various fields of hard drive description.
+            size = str(int(mach[name + " mb"].value()) / 1000)
+            model = mach[name + " model"].value()
+            hddDesc += size + "GB " + model
+    mach["hdd desc"].setValue(hddDesc)
 
 
 # Interpret the lsb_release output to determine OS version.
@@ -580,7 +599,7 @@ def readRawDataFromFile(rawFilePath):
 
 # Get the output from a terminal command.
 def terminalCommand(command):
-    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE).communicate()
+    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
     return output
 
 
