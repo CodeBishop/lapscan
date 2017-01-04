@@ -111,7 +111,8 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
             '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection', 'computer'
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
-correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital"}
+correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
+                    "genuineintel": "Intel"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
@@ -377,29 +378,30 @@ def interpretHdparm(rawDict, mach):
 
 # Interpret the lsb_release output to determine OS version.
 def interpretLSBRelease(rawDict, mach):
-    mach['os version'].setValue(re.search(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release']).groups()[0])
+    result = re.search(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release'])
+    if result:
+        mach['os version'].setValue(result.groups()[0])
+
+
+# Interpret the lscpu output to determine CPU make and model.
+def intepretLSCPU(rawDict, mach):
+    # Get CPU manufacturer.
+    result = re.search(r"Vendor ID:[\s\t]*(.*)\n", rawDict['lscpu'])
+    if result:
+        mach['cpu make'].setValue(result.groups()[0])
+
+    # Get CPU model.
+    result = re.search(r"Model name:[\s\t]*(.*)@", rawDict['lscpu'])
+    if result:
+        model = result.groups()[0]
+        # Remove redundant manufacturer name from model description.
+        model = re.sub(r"Intel|AMD", "", model, flags=re.IGNORECASE)
+        mach["cpu model"].setValue(model)
 
 
 # Interpret the lshw output if the raw data is present.
 def interpretLSHW(rawDict, mach):
     if "lshw" in rawDict:
-        # Find start of LSHW section on CPU description.
-        cpuSectionStart = lshwData[re.search(r"\*-cpu", lshwData).start():]
-
-        # Get CPU manufacturer.
-        cpuDesc = re.search(r"vendor: (.*)\n", cpuSectionStart).groups()[0]
-        machine['cpu make'].setValue(re.search(r"(Intel|AMD)", cpuDesc).groups()[0])
-
-        # Get CPU model description.
-        model = re.search(r"product: (.*)\n", cpuSectionStart).groups()[0]
-
-        # Extract CPU model from CPU model description by deleting undesired substrings.
-        model = re.sub(r"\(tm\)|\(r\)|Intel|AMD|CPU|Processor", "", model, flags=re.IGNORECASE)
-        model = re.sub(r"\s*@.*", "", model, flags=re.IGNORECASE)  # Remove everything after an @
-        model = re.sub(r"\s\s+", " ", model, flags=re.IGNORECASE)  # Replace multiple spaces with just one.
-        model = re.search(r"\s*(\w.*)", model).groups()[0]  # Keep what's left, minus any front spacing.
-        machine['cpu model'].setValue(model)
-
         # Get optical drive description.
         cdromSearch = re.search(r"\*-cdrom", lshwData)
         if cdromSearch:
@@ -494,6 +496,7 @@ def readRawData(rawFilePath=None):
         rawDict = dict()
 
         # Get dmidecode info describing the system's make and model and such.
+        print "Reading system make and model."
         try:
             rawDict['dmidecode_system_make'] = terminalCommand("dmidecode -s system-manufacturer")
             rawDict['dmidecode_system_model'] = terminalCommand("dmidecode -s system-product-name")
@@ -504,6 +507,7 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get dmidecode info describing the system's RAM slots and their contents.
+        print "Reading RAM information."
         try:
             rawDict['dmidecode_memory'] = terminalCommand("dmidecode -t 17")  # Type 17 is RAM.
         except OSError as errMsg:
@@ -511,6 +515,7 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get CPU speed.
+        print "Determining maximum CPU speed."
         try:
             rawDict['cpuinfo_max_freq'] = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
         except IOError as errMsg:
@@ -518,36 +523,15 @@ def readRawData(rawFilePath=None):
                   "system file because: " + str(errMsg)
 
         # Get OS bit depth.
+        print "Checking OS bit depth."
         try:
             rawDict['getconf'] = str(terminalCommand("getconf LONG_BIT"))
         except OSError as errMsg:
             print "WARNING: OS bit-depth could not be determined. Execution of getconf failed " \
                   "with message: " + str(errMsg)
 
-        # Get Linux version information.
-        try:
-            rawDict['lsb_release'] = str(terminalCommand("lsb_release -d"))
-        except OSError as errMsg:
-            print "WARNING: Linux version could not be determined. Execution of lsb_release failed " \
-                  "with message: " + str(errMsg)
-
-        # Get bulk information about all hardware.
-        try:
-            pass #DEBUG: lshw is disabled because it's slow and I'm testing without it for now.
-            # rawDict['lshw'] = str(terminalCommand("lshw"))
-        except OSError as errMsg:
-            print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
-                  "failed with message: " + str(errMsg)
-
-        # Get information about internal and external USB devices.
-        try:
-            rawDict['lsusb'] = str(terminalCommand("lsusb"))
-            rawDict['lsusb_verbose'] = str(terminalCommand("lsusb -v"))
-        except OSError as errMsg:
-            print "WARNING: USB device info unavailable (including webcam). Execution of lsusb command " \
-                  "failed with message: " + str(errMsg)
-
         # Get information about all hard drives.
+        print "Getting internal hard drive information."
         try:
             rawDict['hdparm_hda'] = str(terminalCommand("hdparm -I /dev/hda"))
             rawDict['hdparm_sda'] = str(terminalCommand("hdparm -I /dev/sda"))
@@ -556,7 +540,41 @@ def readRawData(rawFilePath=None):
             print "WARNING: Some hard drive information may unavailable. Execution of hdparm command " \
                   "failed with message: " + str(errMsg)
 
+        # Get Linux version information.
+        print "Checking OS version."
+        try:
+            rawDict['lsb_release'] = str(terminalCommand("lsb_release -d"))
+        except OSError as errMsg:
+            print "WARNING: Linux version could not be determined. Execution of lsb_release failed " \
+                  "with message: " + str(errMsg)
+
+        # Get CPU make and model.
+        print "Reading CPU make and model"
+        try:
+            rawDict['lscpu'] = str(terminalCommand("lscpu"))
+        except OSError as errMsg:
+            print "WARNING: CPU model could not be determined. Execution of lscpu failed " \
+                  "with message: " + str(errMsg)
+
+        # Get bulk information about all hardware.
+        print "Reading misc hardware info."
+        try:
+            pass #DEBUG: lshw is disabled because it's slow and I'm testing without it for now.
+            # rawDict['lshw'] = str(terminalCommand("lshw"))
+        except OSError as errMsg:
+            print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
+                  "failed with message: " + str(errMsg)
+
+        # Get information about internal and external USB devices.
+        print "Reading USB device info."
+        try:
+            rawDict['lsusb'] = str(terminalCommand("lsusb"))
+        except OSError as errMsg:
+            print "WARNING: USB device info unavailable (including webcam). Execution of lsusb command " \
+                  "failed with message: " + str(errMsg)
+
         # Get power supply (battery) information from upower.
+        print "Looking for battery."
         try:
             rawDict['upower'] = str(terminalCommand("upower --dump"))
         except OSError as errMsg:
@@ -676,10 +694,12 @@ def main():
         interpretGetconf(rawDict, machine)
         interpretHdparm(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
+        intepretLSCPU(rawDict, machine)
         interpretLSUSB(rawDict, machine)
         interpretUPower(rawDict, machine)
 
         # Output our program's findings.
+        print  # Blank line
         printBuildSheet(machine)
         writeODSFile(machine, 'template.ods')
 
