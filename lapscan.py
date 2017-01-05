@@ -32,7 +32,7 @@
 #   Add the code to identify SSD drivers when present and rotational speed when not. Test it on the Optiplex data
 #       which seems to be missing the rpm data.
 #   Check that the hdd code is correctly describing a dual-hard drive machine.
-#
+#   Clean out all the cruft marked DEBUG in this code.
 
 
 # Evaluations to be Made
@@ -119,128 +119,13 @@ fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'syst
               'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc',
               'hdd1 rpm', 'hdd1 mb', 'hdd1 model', 'hdd1 connector',
               'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector', 'hdd desc',
-# EXAMPLE:    'SSD',       '20000'     , 'Sandisk'  , 'whatever',   'SATA'
+# EXAMPLE:    'SSD',      '20000'    'Sandisk'     'SATA'
               'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
               'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
               'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
               'audio make', 'audio model', 'usb left', 'usb right', 'usb front', 'usb back', 'vga ok',
               'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', 'volume ok', 'volume keys', 'headphone jack ok',
               'microphone ok', 'microphone jacks', 'media controls ok', 'media keys', 'lid closed description']
-
-
-# Remove junk words, irrelevant punctuation and multiple spaces from a field string.
-def sanitizeString(string):
-    # Remove junk words like "corporation", "ltd", etc
-    for word in junkWords:
-        string = re.sub('(?i)' + word, '', string)
-    # Fix words that can be written more neatly.
-    for badWord in correctableWords.keys():
-        goodWord = correctableWords[badWord]
-        string = re.sub('(?i)' + badWord, goodWord, string)
-    # Remove junk punctuation.
-    string = re.sub(',', '', string)
-    string = re.sub('\[', '', string)
-    string = re.sub('\]', '', string)
-    return stripExcessWhitespace(string)
-
-
-# Reduce multiple whitespaces to a single space and eliminate leading and trailing whitespace.
-def stripExcessWhitespace(string):
-    # Reduce multiple whitespace sections to a single space.
-    string = re.sub('\s\s+', ' ', string)
-    # Remove leading and trailing whitespace.
-    string = re.sub('^\s*', '', string)
-    string = re.sub('\s*$', '', string)
-    return string
-
-
-# Print a machine's info to the terminal
-def printBuildSheet(mach):
-    sys.stdout.write(COLOR_TO_USE)
-
-    osVersion = mach['os version'].value() + " " + mach['os bit depth'].value() + "-Bit"
-
-    # Construct the strings that describe the machine in VCN Build Sheet format.
-    modelDescription = mach['system make'].value() + ' ' + mach['system model'].value()
-
-    cpuDescription = ''
-    if mach['cpu make'].status() == FIELD_HAS_DATA:
-        cpuDescription = mach['cpu make'].value() + ' ' + mach['cpu model'].value()
-    else:
-        cpuDescription += 'unknown cpu'
-
-    if mach['cpu ghz'].status() == FIELD_HAS_DATA:
-        cpuDescription += ' @ ' + mach['cpu ghz'].value() + ' Ghz'
-
-    ramDescription = mach['ram desc'].value() + ' ' + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
-
-    hddDescription = mach["hdd desc"].value()
-
-    if mach['optical make'].status() == FIELD_NO_DATA_FOUND:
-        opticalDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-    else:
-        opticalDescription = ''
-        if mach['cd type'].status() == FIELD_HAS_DATA:
-            opticalDescription += mach['cd type'].value() + ' '
-        if mach['dvd type'].status() == FIELD_HAS_DATA:
-            opticalDescription += mach['dvd type'].value() + ' '
-        opticalDescription += mach['optical make'].value() + ' '
-        if mach['dvdram'].status() == FIELD_HAS_DATA:
-            opticalDescription += mach['dvdram'].value() + ' '
-
-    if mach['wifi make'].status() == FIELD_HAS_DATA:
-        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + '802.11 ' \
-            + mach['wifi modes'].value()
-    else:
-        wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    if mach['batt max'].status() == FIELD_HAS_DATA:
-        batteryDescription = 'Capacity = ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
-            + 'Wh = ' + mach['batt percent'].value() + '%'
-    else:
-        batteryDescription = 'not present'
-
-    if mach['webcam make'].status() == FIELD_HAS_DATA:
-        webcamDescription = mach['webcam make'].value()
-    else:
-        webcamDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    if mach['bluetooth make'].status() == FIELD_HAS_DATA:
-        bluetoothDescription = mach['bluetooth make'].value() + ' ' + mach['bluetooth model'].value()
-    else:
-        bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    if mach['video make'].status() == FIELD_HAS_DATA:
-        videoDescription = mach['video make'].value() + ' ' + mach['video model'].value()
-    else:
-        videoDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    # DEBUG: This should confirm Gigabit.
-    if mach['ethernet make'].status() == FIELD_HAS_DATA:
-        ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value()
-    else:
-        ethernetDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    if mach['audio make'].status() == FIELD_HAS_DATA:
-        audioDescription = mach['audio make'].value() + ' ' + mach['audio model'].value()
-    else:
-        audioDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
-
-    # Print the VCN Build Sheet to the console.
-    print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
-    print "Model".ljust(FIRST_COL_WIDTH) + modelDescription
-    print "CPU".ljust(FIRST_COL_WIDTH) + cpuDescription
-    print "RAM".ljust(FIRST_COL_WIDTH) + ramDescription
-    print "HDD".ljust(FIRST_COL_WIDTH) + hddDescription
-    print "CD/DVD".ljust(FIRST_COL_WIDTH) + opticalDescription
-    print "Wifi".ljust(FIRST_COL_WIDTH) + wifiDescription
-    print "Battery".ljust(FIRST_COL_WIDTH) + batteryDescription
-    print "Webcam".ljust(FIRST_COL_WIDTH) + webcamDescription
-    print "Bluetooth".ljust(FIRST_COL_WIDTH) + bluetoothDescription
-    print "Video".ljust(FIRST_COL_WIDTH) + videoDescription
-    print "Network".ljust(FIRST_COL_WIDTH) + ethernetDescription
-    print "Audio".ljust(FIRST_COL_WIDTH) + audioDescription
-    sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
 # Interpret the CPU frequency if the raw data is present.
@@ -384,7 +269,7 @@ def interpretLSBRelease(rawDict, mach):
 
 
 # Interpret the lscpu output to determine CPU make and model.
-def intepretLSCPU(rawDict, mach):
+def interpretLSCPU(rawDict, mach):
     # Get CPU manufacturer.
     result = re.search(r"Vendor ID:[\s\t]*(.*)\n", rawDict['lscpu'])
     if result:
@@ -402,26 +287,27 @@ def intepretLSCPU(rawDict, mach):
 # Interpret the lshw output if the raw data is present.
 def interpretLSHW(rawDict, mach):
     if "lshw" in rawDict:
+        lshwData = rawDict["lshw"]
         # Get optical drive description.
         cdromSearch = re.search(r"\*-cdrom", lshwData)
         if cdromSearch:
             opticalSectionStart = lshwData[cdromSearch.start():]
             if re.search(r"cd-rw", opticalSectionStart):
-                machine['cd type'].setValue('CD R/W')
+                mach['cd type'].setValue('CD R/W')
             if re.search(r"dvd-r", opticalSectionStart):
-                machine['dvd type'].setValue('DVD R/W')
+                mach['dvd type'].setValue('DVD R/W')
             if re.search(r"dvd-ram", opticalSectionStart):
-                machine['dvdram'].setValue('DVDRAM')
-            machine['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
+                mach['dvdram'].setValue('DVDRAM')
+            mach['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
         else:
-            machine['optical make'].setStatus(FIELD_NO_DATA_FOUND)
+            mach['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
         # Get wifi hardware description.
         wifiSearch = re.search(r"Wireless interface", lshwData)
         if wifiSearch:
             wifiSectionStart = lshwData[wifiSearch.start():]
             wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
-            machine['wifi make'].setValue(wifiMake)
+            mach['wifi make'].setValue(wifiMake)
 
         # Get video hardware description (3D hardware if found, integrated hardware if not).
         videoSearch = re.search(r"3D controller", lshwData)
@@ -432,8 +318,8 @@ def interpretLSHW(rawDict, mach):
             # Get the video make and model.
             videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
             videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
-            machine['video make'].setValue(videoMake)
-            machine['video model'].setValue(videoModel)
+            mach['video make'].setValue(videoMake)
+            mach['video model'].setValue(videoModel)
 
         # Get Ethernet hardware description.
         ethernetSearch = re.search(r"Ethernet interface", lshwData)
@@ -442,8 +328,8 @@ def interpretLSHW(rawDict, mach):
             # Get the ethernet make and model.
             ethernetMake = re.search(r"vendor: (.*)\n", ethernetSection).groups()[0]
             ethernetModel = re.search(r"product: (.*)\n", ethernetSection).groups()[0]
-            machine['ethernet make'].setValue(ethernetMake)
-            machine['ethernet model'].setValue(ethernetModel)
+            mach['ethernet make'].setValue(ethernetMake)
+            mach['ethernet model'].setValue(ethernetModel)
 
         # Get Audio hardware description.
         audioSearch = re.search(r"\*-multimedia", lshwData)
@@ -452,8 +338,8 @@ def interpretLSHW(rawDict, mach):
             # Get the audio make and model.
             audioMake = re.search(r"vendor: (.*)\n", audioSection).groups()[0]
             audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
-            machine['audio make'].setValue(audioMake)
-            machine['audio model'].setValue(audioModel)
+            mach['audio make'].setValue(audioMake)
+            mach['audio model'].setValue(audioModel)
 
 
 # Read and interpret lsusb output.
@@ -484,6 +370,110 @@ def interpretUPower(rawDict, mach):
         if percentage > 100:
             percentage = 100
         mach['batt percent'].setValue(str(percentage))
+
+
+# Print a machine's info to the terminal
+def printBuildSheet(mach):
+    sys.stdout.write(COLOR_TO_USE)
+
+    osVersion = mach['os version'].value() + " " + mach['os bit depth'].value() + "-Bit"
+
+    # Construct the strings that describe the machine in VCN Build Sheet format.
+    modelDescription = mach['system make'].value() + ' ' + mach['system model'].value()
+
+    cpuDescription = ''
+    if mach['cpu make'].status() == FIELD_HAS_DATA:
+        cpuDescription = mach['cpu make'].value() + ' ' + mach['cpu model'].value()
+    else:
+        cpuDescription += 'unknown cpu'
+
+    if mach['cpu ghz'].status() == FIELD_HAS_DATA:
+        cpuDescription += ' @ ' + mach['cpu ghz'].value() + ' Ghz'
+
+    ramDescription = mach['ram desc'].value() + ' ' + mach['ram type'].value() + " @ " + mach['ram mhz'].value() + " Mhz"
+
+    hddDescription = mach["hdd desc"].value()
+
+    if mach['optical make'].status() == FIELD_NO_DATA_FOUND:
+        opticalDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+    else:
+        opticalDescription = ''
+        if mach['cd type'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['cd type'].value() + ' '
+        if mach['dvd type'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['dvd type'].value() + ' '
+        opticalDescription += mach['optical make'].value() + ' '
+        if mach['dvdram'].status() == FIELD_HAS_DATA:
+            opticalDescription += mach['dvdram'].value() + ' '
+
+    if mach['wifi make'].status() == FIELD_HAS_DATA:
+        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + '802.11 ' \
+            + mach['wifi modes'].value()
+    else:
+        wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    if mach['batt max'].status() == FIELD_HAS_DATA:
+        batteryDescription = 'Capacity = ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
+            + 'Wh = ' + mach['batt percent'].value() + '%'
+    else:
+        batteryDescription = 'not present'
+
+    if mach['webcam make'].status() == FIELD_HAS_DATA:
+        webcamDescription = mach['webcam make'].value()
+    else:
+        webcamDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    if mach['bluetooth make'].status() == FIELD_HAS_DATA:
+        bluetoothDescription = mach['bluetooth make'].value() + ' ' + mach['bluetooth model'].value()
+    else:
+        bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    if mach['video make'].status() == FIELD_HAS_DATA:
+        videoDescription = mach['video make'].value() + ' ' + mach['video model'].value()
+    else:
+        videoDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    # DEBUG: This should confirm Gigabit.
+    if mach['ethernet make'].status() == FIELD_HAS_DATA:
+        ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value()
+    else:
+        ethernetDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    if mach['audio make'].status() == FIELD_HAS_DATA:
+        audioDescription = mach['audio make'].value() + ' ' + mach['audio model'].value()
+    else:
+        audioDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+
+    # Print the VCN Build Sheet to the console.
+    print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
+    print "Model".ljust(FIRST_COL_WIDTH) + modelDescription
+    print "CPU".ljust(FIRST_COL_WIDTH) + cpuDescription
+    print "RAM".ljust(FIRST_COL_WIDTH) + ramDescription
+    print "HDD".ljust(FIRST_COL_WIDTH) + hddDescription
+    print "CD/DVD".ljust(FIRST_COL_WIDTH) + opticalDescription
+    print "Wifi".ljust(FIRST_COL_WIDTH) + wifiDescription
+    print "Battery".ljust(FIRST_COL_WIDTH) + batteryDescription
+    print "Webcam".ljust(FIRST_COL_WIDTH) + webcamDescription
+    print "Bluetooth".ljust(FIRST_COL_WIDTH) + bluetoothDescription
+    print "Video".ljust(FIRST_COL_WIDTH) + videoDescription
+    print "Network".ljust(FIRST_COL_WIDTH) + ethernetDescription
+    print "Audio".ljust(FIRST_COL_WIDTH) + audioDescription
+    sys.stdout.write(COLOR_TO_REVERT_TO)
+
+
+def processCommandLineArguments():
+    global debugMode
+    rawFileToLoad = ""
+
+    for item in sys.argv[1:]:
+        if item == '-d' or item == '--debug':
+            debugMode = True
+        elif item[0] == '-':
+            assert False, "Unrecognized command option: " + item
+        else:
+            rawFileToLoad = item
+
+    return rawFileToLoad
 
 
 # Read in all the raw data from the various data sources.
@@ -559,8 +549,8 @@ def readRawData(rawFilePath=None):
         # Get bulk information about all hardware.
         print "Reading misc hardware info."
         try:
-            pass #DEBUG: lshw is disabled because it's slow and I'm testing without it for now.
-            # rawDict['lshw'] = str(terminalCommand("lshw"))
+            # pass #DEBUG: lshw should be disabled during testing because it's slow.
+            rawDict['lshw'] = str(terminalCommand("lshw"))
         except OSError as errMsg:
             print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
                   "failed with message: " + str(errMsg)
@@ -607,6 +597,32 @@ def readRawDataFromFile(rawFilePath):
     return rawDict
 
 
+# Remove junk words, irrelevant punctuation and multiple spaces from a field string.
+def sanitizeString(string):
+    # Remove junk words like "corporation", "ltd", etc
+    for word in junkWords:
+        string = re.sub('(?i)' + word, '', string)
+    # Fix words that can be written more neatly.
+    for badWord in correctableWords.keys():
+        goodWord = correctableWords[badWord]
+        string = re.sub('(?i)' + badWord, goodWord, string)
+    # Remove junk punctuation.
+    string = re.sub(',', '', string)
+    string = re.sub('\[', '', string)
+    string = re.sub('\]', '', string)
+    return stripExcessWhitespace(string)
+
+
+# Reduce multiple whitespaces to a single space and eliminate leading and trailing whitespace.
+def stripExcessWhitespace(string):
+    # Reduce multiple whitespace sections to a single space.
+    string = re.sub('\s\s+', ' ', string)
+    # Remove leading and trailing whitespace.
+    string = re.sub('^\s*', '', string)
+    string = re.sub('\s*$', '', string)
+    return string
+
+
 # Get the output from a terminal command.
 def terminalCommand(command):
     output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
@@ -649,21 +665,6 @@ def writeRawData(rawDict, filePath):
     rawFile.close()
 
 
-def processCommandLineArguments():
-    global debugMode
-    rawFileToLoad = ""
-
-    for item in sys.argv[1:]:
-        if item == '-d' or item == '--debug':
-            debugMode = True
-        elif item[0] == '-':
-            assert False, "Unrecognized command option: " + item
-        else:
-            rawFileToLoad = item
-
-    return rawFileToLoad
-
-
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
@@ -694,7 +695,8 @@ def main():
         interpretGetconf(rawDict, machine)
         interpretHdparm(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
-        intepretLSCPU(rawDict, machine)
+        interpretLSCPU(rawDict, machine)
+        interpretLSHW(rawDict, machine)
         interpretLSUSB(rawDict, machine)
         interpretUPower(rawDict, machine)
 
