@@ -171,7 +171,7 @@ def dumpCaptureFailures():
         # Concatenate excessively long searched text strings.
         if len(text) > 100:
             text = text[:100] + " ..."
-        print "capture() failed to match: " + pattern
+        print "capture() failed to match: r\"" + pattern + "\""
         print "   in string: " + text
         print "   when called by: " + caller + "()" + "\n"
 
@@ -179,14 +179,16 @@ def dumpCaptureFailures():
 # Interpret the CPU frequency if the raw data is present.
 def interpretCPUFreq(rawDict, mach):
     if "cpuinfo_max_freq" in rawDict:
-        cpuFreq = float(rawDict["cpuinfo_max_freq"])
-        mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+        try:
+            cpuFreq = float(rawDict["cpuinfo_max_freq"])
+            mach['cpu ghz'].setValue("%.1f" % (cpuFreq / 1000000.0))
+        except ValueError:
+            mach['cpu ghz'].setValue(MISSING_FIELD)
 
 
 # Interpret the RAM information from dmidecode type 17 output.
 def interpretDmidecodeMemory(rawDict, mach):
-    if "dmidecode_memory" not in rawDict:
-        print "Missing raw data for dmidecode_memory"
+    if rawDict["dmidecode_memory"] == "":
         return
 
     # Build array of entries, one per RAM slot.
@@ -292,7 +294,7 @@ def interpretDmidecodeSystem(rawDict, mach):
 
 # Interpret the getconf data specifying whether this is a 32-bit or 64-bit OS.
 def interpretGetconf(rawDict, mach):
-    mach['os bit depth'].setValue(re.search(r"(\d*)\n", rawDict['getconf']).groups()[0])
+    mach['os bit depth'].setValue(capture(r"(\d*)\n", rawDict['getconf']))
 
 
 # Interpret the hard drive info given by hdparm.
@@ -305,15 +307,11 @@ def interpretHdparm(rawDict, mach):
             if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
                 name = "hdd" + str(driveNumber)
                 # Get the size of the hard drive.
-                result = re.search(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName])
-                if result:
-                    mach[name + " mb"].setValue(result.groups()[0])
+                mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
                 # Get the model of the hard drive.
-                result = re.search(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
-                if result:
-                    model = result.groups()[0]
-                    model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
-                    mach[name + " model"].setValue(model)
+                model = capture(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
+                model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
+                mach[name + " model"].setValue(model)
             # Prepare to look for another drive.
             driveNumber += 1
 
@@ -335,9 +333,7 @@ def interpretHdparm(rawDict, mach):
 
 # Interpret the lsb_release output to determine OS version.
 def interpretLSBRelease(rawDict, mach):
-    result = re.search(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release'])
-    if result:
-        mach['os version'].setValue(result.groups()[0])
+    mach['os version'].setValue(capture(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release']))
 
 
 # Interpret the lshw output if the raw data is present.
@@ -354,7 +350,7 @@ def interpretLSHW(rawDict, mach):
                 mach['dvd type'].setValue('DVD R/W')
             if re.search(r"dvd-ram", opticalSectionStart):
                 mach['dvdram'].setValue('DVDRAM')
-            mach['optical make'].setValue(re.search(r"vendor: ([\w\- ]*)", opticalSectionStart).groups()[0])
+            mach['optical make'].setValue(capture(r"vendor: ([\w\- ]*)", opticalSectionStart))
         else:
             mach['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
@@ -362,8 +358,7 @@ def interpretLSHW(rawDict, mach):
         wifiSearch = re.search(r"Wireless interface", lshwData)
         if wifiSearch:
             wifiSectionStart = lshwData[wifiSearch.start():]
-            wifiMake = re.search(r"product:\s*(.*)\s*\n", wifiSectionStart).groups()[0]
-            mach['wifi make'].setValue(wifiMake)
+            mach['wifi make'].setValue(capture(r"product:\s*(.*)\s*\n", wifiSectionStart))
 
         # Get video hardware description (3D hardware if found, integrated hardware if not).
         videoSearch = re.search(r"3D controller", lshwData)
@@ -372,60 +367,55 @@ def interpretLSHW(rawDict, mach):
         if videoSearch:
             videoSection = lshwData[videoSearch.start():]
             # Get the video make and model.
-            videoMake = re.search(r"vendor: (.*)\n", videoSection).groups()[0]
-            videoModel = re.search(r"product: (.*)\n", videoSection).groups()[0]
-            mach['video make'].setValue(videoMake)
-            mach['video model'].setValue(videoModel)
+            mach['video make'].setValue(capture(r"vendor: (.*)\n", videoSection))
+            mach['video model'].setValue(capture(r"product: (.*)\n", videoSection))
 
         # Get Ethernet hardware description.
         ethernetSearch = re.search(r"Ethernet interface", lshwData)
         if ethernetSearch:
             ethernetSection = lshwData[ethernetSearch.start():]
             # Get the ethernet make and model.
-            ethernetMake = re.search(r"vendor: (.*)\n", ethernetSection).groups()[0]
-            ethernetModel = re.search(r"product: (.*)\n", ethernetSection).groups()[0]
-            mach['ethernet make'].setValue(ethernetMake)
-            mach['ethernet model'].setValue(ethernetModel)
+            mach['ethernet make'].setValue(capture(r"vendor: (.*)\n", ethernetSection))
+            mach['ethernet model'].setValue(capture(r"product: (.*)\n", ethernetSection))
 
         # Get Audio hardware description.
         audioSearch = re.search(r"\*-multimedia", lshwData)
         if audioSearch:
             audioSection = lshwData[audioSearch.start():]
             # Get the audio make and model.
-            audioMake = re.search(r"vendor: (.*)\n", audioSection).groups()[0]
-            audioModel = re.search(r"product: (.*)\n", audioSection).groups()[0]
-            mach['audio make'].setValue(audioMake)
-            mach['audio model'].setValue(audioModel)
+            mach['audio make'].setValue(capture(r"vendor: (.*)\n", audioSection))
+            mach['audio model'].setValue(capture(r"product: (.*)\n", audioSection))
 
 
 # Read and interpret lsusb output.
 def interpretLSUSB(rawDict, mach):
     # Grab the description from any lsusb line with "webcam" in it
-    webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
+    webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
 
     # If "webcam" wasn't found then try for "Chicony".
-    if not webcamSearchResult:
-        webcamSearchResult = re.search(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
+    if webcamMake == MISSING_FIELD:
+        webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
 
     # If any match was found then use it.
-    if webcamSearchResult:
-        webcamMake = webcamSearchResult.groups()[0]
+    if not webcamMake == MISSING_FIELD:
         webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
         mach['webcam make'].setValue(webcamMake)
 
 
 # Interpret "upower --dump" output.
 def interpretUPower(rawDict, mach):
-    if not re.search("power supply.*no", rawDict['upower']):
-        mach['batt max'].setValue(re.search(r"energy-full:\s*(\d+)\.", rawDict['upower']).groups()[0])
-        mach['batt orig'].setValue(re.search(r"energy-full-design:\s*(\d+)\.", rawDict['upower']).groups()[0])
-        # The capacity value given by upower won't match match the energy-full / energy-full-design. Calculate manually.
+    mach['batt max'].setValue(capture(r"energy-full:\s*(\d+)\.", rawDict['upower']))
+    mach['batt orig'].setValue(capture(r"energy-full-design:\s*(\d+)\.", rawDict['upower']))
+    # The capacity value given by upower won't match match the energy-full / energy-full-design. Calculate manually.
+    try:
         percentage = float(mach['batt max'].value()) / float(mach['batt orig'].value())
         percentage = int(math.ceil(percentage * 100.0))
         # Upower's numbers sometimes show values > 100% and FreeGeek limits these to 100% in writing.
         if percentage > 100:
             percentage = 100
         mach['batt percent'].setValue(str(percentage))
+    except ValueError:
+        mach['batt percent'].setValue(MISSING_FIELD)
 
 
 # Print a machine's info to the terminal
