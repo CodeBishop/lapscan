@@ -76,6 +76,7 @@ COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
 DEFAULT_SYSTEM_ID = "unidentified_system"
 MISSING_FIELD = '_'
+RECORD_CAPTURE_FAILURE, IGNORE_CAPTURE_FAILURE = 1, 2
 
 debugMode = False
 
@@ -146,7 +147,6 @@ rawDataSectionNames = [
     "hdparm_sda",
     "hdparm_sdb",
     "hdparm_sdc",
-    "raw_file_source",  # This field is temporarily generated when raw data is loaded from a file.
     "upower",
 ]
 
@@ -154,13 +154,14 @@ captureFailures = list()
 
 
 # Use a regular expression to capture part of a string or return MISSING_FIELD if unable.
-def capture(pattern, text):
+def capture(pattern, text, failureAction=RECORD_CAPTURE_FAILURE):
     result = re.search(pattern, text)
     if result and result.group(1):
         return result.group(1)
     else:
-        caller = inspect.stack()[1][3]
-        captureFailures.append((caller, pattern, text))
+        if failureAction == RECORD_CAPTURE_FAILURE:
+            caller = inspect.stack()[1][3]
+            captureFailures.append((caller, pattern, text))
         return MISSING_FIELD
 
 
@@ -207,7 +208,7 @@ def interpretDmidecodeMemory(rawDict, mach):
     # Compile a list of RAM sizes in megabytes.
     ramSizes = list()
     for ramDesc in ramDescs:
-        size = capture(r"(?i)size:\s*(\d+)\s*mb", ramDesc)
+        size = capture(r"(?i)size:\s*(\d+)\s*mb", ramDesc, IGNORE_CAPTURE_FAILURE)
         # If any RAM slot has a module but not a discernible size then just give up.
         if size == MISSING_FIELD:
             mach["ram desc"].setRawValue("(Unable to determine RAM layout)")
@@ -390,11 +391,11 @@ def interpretLSHW(rawDict, mach):
 # Read and interpret lsusb output.
 def interpretLSUSB(rawDict, mach):
     # Grab the description from any lsusb line with "webcam" in it
-    webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'])
+    webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
 
     # If "webcam" wasn't found then try for "Chicony".
     if webcamMake == MISSING_FIELD:
-        webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'])
+        webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
 
     # If any match was found then use it.
     if not webcamMake == MISSING_FIELD:
