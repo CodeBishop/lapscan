@@ -66,7 +66,7 @@ import re
 import subprocess
 import sys
 import os
-import stat
+import inspect
 import math
 import zipfile
 
@@ -75,6 +75,7 @@ COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
 DEFAULT_SYSTEM_ID = "unidentified_system"
+MISSING_FIELD = '_'
 
 debugMode = False
 
@@ -92,12 +93,12 @@ class Field:
         self.m_status = FIELD_NOT_INITIALIZED
 
     def setValue(self, val):
-        assert type(val) == str, "Field.setValue() given non-string."
+        assert type(val) == str, "Field.setValue() given non-string for field \"" + self.name + "\""
         self.m_value = sanitizeString(val)
         self.m_status = FIELD_HAS_DATA
 
     def setRawValue(self, val):
-        assert type(val) == str, "Field.setRawValue() given non-string."
+        assert type(val) == str, "Field.setRawValue() given non-string for field \"" + self.name + "\""
         self.m_value = val
         self.m_status = FIELD_HAS_DATA
 
@@ -130,6 +131,50 @@ fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'syst
               'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
               'audio make', 'audio model']
 
+rawDataSectionNames = [
+    "getconf",
+    "cpuinfo_max_freq",
+    "dmidecode_memory",
+    "dmidecode_processor",
+    "dmidecode_system_make",
+    "dmidecode_system_model",
+    "dmidecode_system_serial",
+    "dmidecode_system_version",
+    "lsb_release",
+    "lshw",
+    "lsusb",
+    "hdparm_sda",
+    "hdparm_sdb",
+    "hdparm_sdc",
+    "raw_file_source",  # This field is temporarily generated when raw data is loaded from a file.
+    "upower",
+]
+
+captureFailures = list()
+
+
+# Use a regular expression to capture part of a string or return MISSING_FIELD if unable.
+def capture(pattern, text):
+    result = re.search(pattern, text)
+    if result and result.group(1):
+        return result.group(1)
+    else:
+        caller = inspect.stack()[1][3]
+        captureFailures.append((caller, pattern, text))
+        return MISSING_FIELD
+
+
+def dumpCaptureFailures():
+    for (caller, pattern, text) in captureFailures:
+        # Eliminate excess whitespace and newlines from descriptions of searched text.
+        text = re.sub(r"\s{2,}|\n", " ", text)
+        # Concatenate excessively long searched text strings.
+        if len(text) > 100:
+            text = text[:100] + " ..."
+        print "capture() failed to match: " + pattern
+        print "   in string: " + text
+        print "   when called by: " + caller + "()" + "\n"
+
 
 # Interpret the CPU frequency if the raw data is present.
 def interpretCPUFreq(rawDict, mach):
@@ -140,68 +185,79 @@ def interpretCPUFreq(rawDict, mach):
 
 # Interpret the RAM information from dmidecode type 17 output.
 def interpretDmidecodeMemory(rawDict, mach):
-    if "dmidecode_memory" in rawDict:
-        # Build array of entries, one per RAM slot.
-        ramSlots = re.findall(r"(Handle [\s\S]*?)(?:(?:\n\n)|(?:$))", rawDict["dmidecode_memory"])
+    if "dmidecode_memory" not in rawDict:
+        print "Missing raw data for dmidecode_memory"
+        return
 
-        # Take the memory type and speed from the first slot (since all slots should be identical anyways).
-        mach["ram type"].setValue(re.search(r"Type: (\w+)", ramSlots[0]).groups()[0])
-        mach["ram mhz"].setValue(re.search(r"Speed: (\d+) MHz", ramSlots[0]).groups()[0])
+    # Build array of entries, one per RAM slot.
+    ramSlotDescs = re.findall(r"(Handle [\s\S]*?)(?:(?:\n\n)|(?:$))", rawDict["dmidecode_memory"])
 
-        # Get the sizes of all the RAM components in the machine.
-        ramCount = 0  # Slot numbering is inconsistent so we re-number them from zero.
-        totalRam = 0
-        commonSize = 0  # Track whether all the RAM is the same size.
-        for slotDesc in ramSlots:
-            searchResult = re.search(r"Size: (\d+) MB", slotDesc)
-            if searchResult:
-                memName = "ram" + str(ramCount) + " mb"
-                memSize = searchResult.groups()[0]
-                if commonSize == 0:
-                    commonSize = int(memSize)
-                elif commonSize != int(memSize):
-                    commonSize = None
-                fieldNames.append(memName)
-                mach[memName] = Field(memName)
-                mach[memName].setValue(memSize)
-                ramCount += 1
-                totalRam += int(memSize)
+    # Build array of RAM module descriptions (discard empty slots).
+    ramDescs = list()
+    for slotDesc in ramSlotDescs:
+        if not re.search(r"Size: No Module Installed", slotDesc):
+            ramDescs.append(slotDesc)
 
-        # Start building the RAM description field.
-        ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
+    # Take the memory type and speed from the first slot (since all slots should be identical anyways).
+    mach["ram type"].setValue(capture(r"Type: (\w+)", ramDescs[0]))
+    mach["ram mhz"].setValue(capture(r"Speed: (\d+) MHz", ramDescs[0]))
 
-        # If all the RAM is the same size then describe it as a multiple.
-        if commonSize:
-            ramDesc += str(ramCount) + " x " + str("%.0f" % (int(mach["ram0 mb"].value()) / 1024.0))
-
-        # If the RAM is not all the same size then describe it by summation.
+    # Compile a list of RAM sizes in megabytes.
+    ramSizes = list()
+    for ramDesc in ramDescs:
+        size = capture(r"(?i)size:\s*(\d+)\s*mb", ramDesc)
+        # If any RAM slot has a module but not a discernible size then just give up.
+        if size == MISSING_FIELD:
+            mach["ram desc"].setRawValue("(Unable to determine RAM layout)")
+            return
+        # If any RAM has a module < 1 gb in size then give up (the layout work isn't worth it).
+        if int(size) < 1024:
+            mach["ram desc"].setRawValue("(Describing RAM modules less than 1GB isn't handled)")
+            return
         else:
-            ramDesc += str("%.0f" % (int(mach["ram0 mb"].value()) / 1024.0))
-            for i in range(1, ramCount):
-                memName = "ram" + str(i) + " mb"
-                memSize = int(mach[memName].value())
-                ramDesc += " + " + str("%.0f" % (memSize / 1024.0))
+            ramSizes.append(int(size))
 
-        # Finish building the RAM description field.
+    # Tally and record the ram sizes while checking for a common size.
+    totalRam = 0
+    NO_COMMON_SIZE = -1
+    commonSize = ramSizes[0]
+    for i in range(len(ramSizes)):
+        totalRam += ramSizes[i]
+
+        # Create fields for each ram module to record the module's size.
+        ramSizeFieldName = "ram" + str(i) + " mb"
+        mach[ramSizeFieldName] = Field(ramSizeFieldName)
+        mach[ramSizeFieldName].setValue(str(ramSizes[i]))
+
+        if ramSizes[i] != commonSize:
+            commonSize = NO_COMMON_SIZE
+
+    # Start building the RAM description field.
+    ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
+
+    # If the RAM is not all the same size then describe it by summation.
+    if commonSize == NO_COMMON_SIZE:
+        ramDesc += str("%.0f" % (ramSizes[0] / 1024.0))
+        for i in range(1, len(ramSizes)):
+            ramDesc += " + " + str("%.0f" % (ramSizes[i] / 1024.0))
         ramDesc += " Gb"
 
-        mach["ram desc"].setRawValue(ramDesc)
+    # If all the RAM is the same size then describe it as a multiple.
+    else:
+        ramDesc += str(len(ramSizes)) + " x " + str("%.0f" % (commonSize / 1024.0)) + " Gb"
+
+    mach["ram desc"].setRawValue(ramDesc)
 
 
 # Interpret the processor information from dmidecode output.
 def interpretDmidecodeProcessor(rawDict, mach):
-    # Get CPU manufacturer.
-    result = re.search(r"Manufacturer:[\s\t]*(.*)\n", rawDict['dmidecode_processor'])
-    if result:
-        mach['cpu make'].setValue(result.groups()[0])
+    if "dmidecode_processor" not in rawDict:
+        print "Missing raw data for dmidecode_processor"
+        return
 
-    # Get CPU model but do not include anything after the @ symbol because we get the frequency elsewhere.
-    result = re.search(r"Version:[\s\t]*(.*?)(?:@|\n)", rawDict['dmidecode_processor'])
-    if result:
-        model = result.groups()[0]
-        # Remove redundant manufacturer name from model description.
-        model = re.sub(r"Intel|AMD", "", model, flags=re.IGNORECASE)
-        mach["cpu model"].setValue(model)
+    mach['cpu make'].setValue(capture(r"Manufacturer:[\s\t]*(.*)\n", rawDict['dmidecode_processor']))
+    model = capture(r"Version:[\s\t]*(.*?)(?:@|\n)", rawDict['dmidecode_processor'])
+    mach["cpu model"].setValue(re.sub(r"(?i)intel|amd", "", model))
 
 
 # Interpret the identifying information of the system using the dmidecode output.
@@ -227,7 +283,7 @@ def interpretDmidecodeSystem(rawDict, mach):
     # Construct a system identifier from the make, model and serial number.
     systemID = (systemMake + '_' + systemModel + '__' + systemSerial).replace(' ', '_')
 
-    # Store the values (stored raw because they were already sanitized above).
+    # Store the values (unsanitized because they were already sanitized above).
     mach['system make'].setRawValue(systemMake)
     mach['system model'].setRawValue(systemModel)
     mach['system serial'].setRawValue(systemSerial)
@@ -478,7 +534,6 @@ def processCommandLineArguments():
 
 # Read in all the raw data from the various data sources.
 def readRawData(rawFilePath=None):
-
     if rawFilePath and not rawFilePath == "":
         rawDict = readRawDataFromFile(rawFilePath)
 
@@ -523,7 +578,6 @@ def readRawData(rawFilePath=None):
         # Get information about all hard drives.
         print "Getting internal hard drive information."
         try:
-            rawDict['hdparm_hda'] = str(terminalCommand("hdparm -I /dev/hda"))
             rawDict['hdparm_sda'] = str(terminalCommand("hdparm -I /dev/sda"))
             rawDict['hdparm_sdb'] = str(terminalCommand("hdparm -I /dev/sdb"))
             rawDict['hdparm_sdc'] = str(terminalCommand("hdparm -I /dev/sdc"))
@@ -650,7 +704,7 @@ def writeODSFile(mach, templateFilename, outputFilename=None):
 
 def writeRawData(rawDict, filePath):
     if "raw_file_source" in rawDict:
-        print "Raw file not created because input data was taken from a raw file rather than from this machine."
+        print "Raw file not created because raw data was loaded from: " + rawDict["raw_file_source"]
         return
 
     # Initialize the string that will contain all the raw data.
@@ -670,53 +724,69 @@ def writeRawData(rawDict, filePath):
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
 def main():
-    try:
-        rawFileToLoad = processCommandLineArguments()
+    rawFileToLoad = processCommandLineArguments()
 
-        # Initialize an empty machine description.
-        machine = dict()
-        for fieldName in fieldNames:
-            machine[fieldName] = Field(fieldName)
+    # Initialize an empty machine description.
+    machine = dict()
+    for fieldName in fieldNames:
+        machine[fieldName] = Field(fieldName)
 
-        # Fetch all the raw data describing the machine.
-        if not rawFileToLoad == "":
-            rawDict = readRawData(rawFileToLoad)
-        else:
-            rawDict = readRawData(None)
+    # Fetch all the raw data describing the machine.
+    if not rawFileToLoad == "":
+        rawDict = readRawData(rawFileToLoad)
+    else:
+        rawDict = readRawData(None)
 
-        # Interpret dmidecode first so the system will have a proper id.
-        interpretDmidecodeSystem(rawDict, machine)
+    # Notify for unrecognized raw data sections that were found.
+    for rawDataName in rawDict.keys():
+        if rawDataName not in rawDataSectionNames:
+            print "Unrecognized raw data section named \"" + rawDataName + "\""
 
-        # Save a copy of all the raw data.
-        writeRawData(rawDict, machine['system id'].value() + '.txt')
+    # Check for missing raw data.
+    for rawDataName in rawDataSectionNames:
+        if rawDataName not in rawDict.keys():
+            print "Missing raw data section for \"" + rawDataName + "\""
+            rawDict[rawDataName] = ""
 
-        # Interpret all the rest of the raw data.
-        interpretCPUFreq(rawDict, machine)
-        interpretDmidecodeMemory(rawDict, machine)
-        interpretDmidecodeProcessor(rawDict, machine)
-        interpretGetconf(rawDict, machine)
-        interpretHdparm(rawDict, machine)
-        interpretLSBRelease(rawDict, machine)
-        interpretLSHW(rawDict, machine)
-        interpretLSUSB(rawDict, machine)
-        interpretUPower(rawDict, machine)
+    # Interpret dmidecode first so the system will have a proper id.
+    interpretDmidecodeSystem(rawDict, machine)
 
-        # Output our program's findings.
-        print  # Blank line
-        printBuildSheet(machine)
-        writeODSFile(machine, 'template.ods')
+    # Save a copy of all the raw data.
+    writeRawData(rawDict, machine['system id'].value() + '.txt')
 
-    # Catch-and-release assertion errors.
-    except AssertionError as errMsg:
-        print "ERROR: " + str(errMsg) + '\n'
+    # Interpret all the rest of the raw data.
+    interpretCPUFreq(rawDict, machine)
+    interpretDmidecodeMemory(rawDict, machine)
+    interpretDmidecodeProcessor(rawDict, machine)
+    interpretGetconf(rawDict, machine)
+    interpretHdparm(rawDict, machine)
+    interpretLSBRelease(rawDict, machine)
+    interpretLSHW(rawDict, machine)
+    interpretLSUSB(rawDict, machine)
+    interpretUPower(rawDict, machine)
 
-    # Catch all other exceptions so the user won't see traceback dump.
-    except:
-        etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
-        if debugMode:
-            # If debug mode is active then dump the traceback.
-            sys.excepthook(etype, evalue, etrace)
-        print "ERROR: " + str(etype)
-        print "MESSAGE: " + str(evalue) + "\n"
+    # If debugging then dump info about failed regex matches.
+    if debugMode:
+        dumpCaptureFailures()
 
-main()
+    # Output our program's findings.
+    print  # Blank line
+    printBuildSheet(machine)
+    writeODSFile(machine, 'template.ods')
+
+
+try:
+    main()
+
+# Catch-and-release assertion errors.
+except AssertionError as errMsg:
+    print "ERROR: " + str(errMsg) + '\n'
+
+# Catch all other exceptions so the user won't see traceback dump.
+except:
+    etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
+    if debugMode:
+        # If debug mode is active then dump the traceback.
+        sys.excepthook(etype, evalue, etrace)
+    print "ERROR: " + str(etype)
+    print "MESSAGE: " + str(evalue) + "\n"
