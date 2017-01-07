@@ -31,10 +31,11 @@
 #   See if you can disable the screensaver and password automatically (for the store's convenience).
 #   Add the code to identify SSD drivers when present and rotational speed when not. Test it on the Optiplex data
 #       which seems to be missing the rpm data.
-#   Check that the hdd code is correctly describing a dual-hard drive machine.
 #   Clean out all the cruft marked DEBUG in this code.
-#   Reconsider having hdparm check for /dev/hda. Does this ever show up?
-#   Add the output from "ls /dev" to you raw data so you can potentially track which devices show up in there.
+#   Find a way to identify SATA vs IDE drives.
+#   Is there a way to identify dedicated vs integrated graphics?
+#   Grep a directory of collected raw data text files for bluetooth. Does it sometime show up in lsusb output?
+#
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
 
@@ -128,7 +129,7 @@ fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'syst
               'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector', 'hdd desc',
 # EXAMPLE:    'SSD',      '20000'    'Sandisk'     'SATA'
               'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
-              'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
+              'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam model',
               'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
               'audio make', 'audio model']
 
@@ -141,6 +142,7 @@ rawDataSectionNames = [
     "dmidecode_system_model",
     "dmidecode_system_serial",
     "dmidecode_system_version",
+    "ls_dev",
     "lsb_release",
     "lshw",
     "lsusb",
@@ -194,6 +196,9 @@ def interpretDmidecodeMemory(rawDict, mach):
 
     # Build array of entries, one per RAM slot.
     ramSlotDescs = re.findall(r"(Handle [\s\S]*?)(?:(?:\n\n)|(?:$))", rawDict["dmidecode_memory"])
+
+    if len(ramSlotDescs) == 0:
+        return
 
     # Build array of RAM module descriptions (discard empty slots).
     ramDescs = list()
@@ -301,7 +306,7 @@ def interpretGetconf(rawDict, mach):
 # Interpret the hard drive info given by hdparm.
 def interpretHdparm(rawDict, mach):
     driveNumber = 1
-    # Look for an IDE drive and one or two SATA drives.
+    # Look for drives.
     for devName in ['hdparm_sda', 'hdparm_sdb', 'hdparm_sdc']:
         if rawDict[devName] != "":
             # If a found drive is a fixed drive (and not a removable USB drive).
@@ -318,10 +323,9 @@ def interpretHdparm(rawDict, mach):
 
     # Construct the hard drive description field.
     hddDesc = ""
-    for driveNumber in [1, 2]:
-        name = "hdd" + str(driveNumber)
-        # Check if hdd exists by checking for a connector value (since that entry is guaranteed to be present).
-        if mach[name + " connector"].value() != "":
+    try:
+        for driveNumber in [1, 2]:
+            name = "hdd" + str(driveNumber)
             # If there's a second drive then put a plus in the description.
             if driveNumber == 2:
                 hddDesc += " + "
@@ -329,7 +333,10 @@ def interpretHdparm(rawDict, mach):
             size = str(int(mach[name + " mb"].value()) / 1000)
             model = mach[name + " model"].value()
             hddDesc += size + "GB " + model
-    mach["hdd desc"].setValue(hddDesc)
+        mach["hdd desc"].setValue(hddDesc)
+    except ValueError:
+        if __name__ == '__main__':
+            pass  # Bad data should just result in a blank field
 
 
 # Interpret the lsb_release output to determine OS version.
@@ -359,7 +366,8 @@ def interpretLSHW(rawDict, mach):
         wifiSearch = re.search(r"Wireless interface", lshwData)
         if wifiSearch:
             wifiSectionStart = lshwData[wifiSearch.start():]
-            mach['wifi make'].setValue(capture(r"product:\s*(.*)\s*\n", wifiSectionStart))
+            mach['wifi make'].setValue(capture(r"vendor:\s*(.*)\s*\n", wifiSectionStart))
+            mach['wifi model'].setValue(capture(r"product:\s*(.*)\s*\n", wifiSectionStart))
 
         # Get video hardware description (3D hardware if found, integrated hardware if not).
         videoSearch = re.search(r"3D controller", lshwData)
@@ -391,16 +399,19 @@ def interpretLSHW(rawDict, mach):
 # Read and interpret lsusb output.
 def interpretLSUSB(rawDict, mach):
     # Grab the description from any lsusb line with "webcam" in it
-    webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
+    webcamModel = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (webcam.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
 
     # If "webcam" wasn't found then try for "Chicony".
-    if webcamMake == MISSING_FIELD:
-        webcamMake = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
+    if webcamModel == MISSING_FIELD:
+        webcamModel = capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (chicony.*)\n", rawDict['lsusb'], IGNORE_CAPTURE_FAILURE)
 
     # If any match was found then use it.
-    if not webcamMake == MISSING_FIELD:
-        webcamMake = re.sub(',', '', webcamMake)  # Strip out commas.
-        mach['webcam make'].setValue(webcamMake)
+    if not webcamModel == MISSING_FIELD:
+        webcamModel = re.sub(',', '', webcamModel)  # Strip out commas.
+        mach['webcam model'].setValue(webcamModel)
+
+    # Grab the description of any lsusb line with "bluetooth" in it.
+    mach["bluetooth model"].setValue(capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (.*bluetooth.*)\n", rawDict['lsusb']))
 
 
 # Interpret "upower --dump" output.
@@ -465,13 +476,13 @@ def printBuildSheet(mach):
     else:
         batteryDescription = 'not present'
 
-    if mach['webcam make'].status() == FIELD_HAS_DATA:
-        webcamDescription = mach['webcam make'].value()
+    if mach['webcam model'].status() == FIELD_HAS_DATA:
+        webcamDescription = mach['webcam model'].value()
     else:
         webcamDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
-    if mach['bluetooth make'].status() == FIELD_HAS_DATA:
-        bluetoothDescription = mach['bluetooth make'].value() + ' ' + mach['bluetooth model'].value()
+    if mach['bluetooth model'].status() == FIELD_HAS_DATA:
+        bluetoothDescription = mach['bluetooth model'].value()
     else:
         bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
 
@@ -515,10 +526,10 @@ def processCommandLineArguments():
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
             debugMode = True
-        if item == '-s':
+        elif item == '-l':
             skipLSHW = True
         elif item[0] == '-':
-            assert False, "Unrecognized command option: " + item
+            assert False, "Unrecognized command option: \"" + item + "\""
         else:
             rawFileToLoad = item
 
@@ -553,7 +564,7 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get CPU speed.
-        print "Determining maximum CPU frequency."
+        print "Reading maximum CPU frequency."
         try:
             rawDict['cpuinfo_max_freq'] = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
         except IOError as errMsg:
@@ -561,7 +572,7 @@ def readRawData(rawFilePath=None):
                   "system file because: " + str(errMsg)
 
         # Get OS bit depth.
-        print "Checking OS bit depth."
+        print "Reading OS bit depth."
         try:
             rawDict['getconf'] = str(terminalCommand("getconf LONG_BIT"))
         except OSError as errMsg:
@@ -569,7 +580,7 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get information about all hard drives.
-        print "Getting internal hard drive information."
+        print "Reading description of internal hard drives."
         try:
             rawDict['hdparm_sda'] = str(terminalCommand("hdparm -I /dev/sda"))
             rawDict['hdparm_sdb'] = str(terminalCommand("hdparm -I /dev/sdb"))
@@ -578,8 +589,14 @@ def readRawData(rawFilePath=None):
             print "WARNING: Some hard drive information may unavailable. Execution of hdparm command " \
                   "failed with message: " + str(errMsg)
 
+        # Get a listing of devices by listing /dev.
+        try:
+            rawDict['ls_dev'] = str(terminalCommand("ls /dev"))
+        except OSError as errMsg:
+            print "WARNING: \"ls /dev\" failed with message: " + str(errMsg)
+
         # Get Linux version information.
-        print "Checking OS version."
+        print "Reading OS version."
         try:
             rawDict['lsb_release'] = str(terminalCommand("lsb_release -d"))
         except OSError as errMsg:
@@ -612,7 +629,7 @@ def readRawData(rawFilePath=None):
                   "failed with message: " + str(errMsg)
 
         # Get power supply (battery) information from upower.
-        print "Looking for battery."
+        print "Reading power source information (searching for battery)."
         try:
             rawDict['upower'] = str(terminalCommand("upower --dump"))
         except OSError as errMsg:
@@ -692,7 +709,10 @@ def writeODSFile(mach, templateFilename, outputFilename=None):
         odsOutput.writestr(fileHandle, fileData)
     odsOutput.close()
     odsInput.close()
-    os.chmod(outputFilename, 0777)  # Make the ODS file writeable.
+    try:
+        os.chmod(outputFilename, 0777)  # Make the ODS file writeable.
+    except OSError:
+        print "Unable to make ODS file writeable."
 
 
 def writeRawData(rawDict, filePath):
@@ -741,6 +761,7 @@ def main():
             print "Missing raw data section for \"" + rawDataName + "\""
             rawDict[rawDataName] = ""
 
+    print "Interpreting data."
     # Interpret dmidecode first so the system will have a proper id.
     interpretDmidecodeSystem(rawDict, machine)
 
