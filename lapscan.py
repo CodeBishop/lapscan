@@ -119,7 +119,7 @@ junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'control
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
-                    "genuineintel": "Intel"}
+                    "genuineintel": "Intel", "sony": "Sony"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
