@@ -35,8 +35,7 @@
 #   Clean out all the cruft marked DEBUG in this code.
 #   Reconsider having hdparm check for /dev/hda. Does this ever show up?
 #   Add the output from "ls /dev" to you raw data so you can potentially track which devices show up in there.
-#
-#   HIGHEST PRIORITY: Failed regexes need to stop crashing the program.
+#   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
 
 
@@ -79,6 +78,7 @@ MISSING_FIELD = '_'
 RECORD_CAPTURE_FAILURE, IGNORE_CAPTURE_FAILURE = 1, 2
 
 debugMode = False
+skipLSHW = False
 
 # Fetch the null device for routing error messages to so they don't clutter the console output.
 DEVNULL = open(os.devnull, 'w')
@@ -509,12 +509,14 @@ def printBuildSheet(mach):
 
 
 def processCommandLineArguments():
-    global debugMode
+    global debugMode, skipLSHW
     rawFileToLoad = ""
 
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
             debugMode = True
+        if item == '-s':
+            skipLSHW = True
         elif item[0] == '-':
             assert False, "Unrecognized command option: " + item
         else:
@@ -595,8 +597,8 @@ def readRawData(rawFilePath=None):
         # Get bulk information about all hardware.
         print "Reading misc hardware info."
         try:
-            pass #DEBUG: lshw should be disabled during testing because it's slow.
-            # rawDict['lshw'] = str(terminalCommand("lshw"))
+            if not skipLSHW:
+                rawDict['lshw'] = str(terminalCommand("lshw"))
         except OSError as errMsg:
             print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
                   "failed with message: " + str(errMsg)
