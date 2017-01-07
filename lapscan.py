@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-# TO DO
-#   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
+# TODO
+#   Make the WiFi section append something like "a/b/g/n" to show WiFi available modes.
 #   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
 #   Test the program with blank input files to simulate all the different ways that re.search() might fail.
 #   Add functionality to store the raw console outputs as strings, ask the user at the end if everything was
@@ -37,17 +37,17 @@
 #   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
 #   Grep a directory of collected raw data text files for bluetooth. Does it sometime show up in lsusb output?
 #   Add a sudo check and see if you can make it prompt for the admin password rather than telling the user to try again.
-#   The thinkpad t61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
+#   The Thinkpad T61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
 #
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
 
 
-# Evaluations to be Made
+# Evaluations to be made
 #   Run the stress test.
-#   Update the OS thereby confirming that the wifi works.
-#   Disable wifi, confirming that the wifi on/off button/switch works and preparing to test ethernet.
-#   Plug in ethernet (wifi still off) and install Synaptic and LXDE, confirming that ethernet works.
+#   Update the OS thereby confirming that the WiFi works.
+#   Disable WiFi, confirming that the WiFi on/off button/switch works and preparing to test ethernet.
+#   Plug in ethernet (WiFi still off) and install Synaptic and LXDE, confirming that ethernet works.
 #   Play optical discs to confirm the drive works, test the media controls, volume controls and headphone jack.
 #   Run Cheese to confirm webcam works.
 #   Test the ethernet jack.
@@ -363,7 +363,7 @@ def interpretLSHW(rawDict, mach):
         else:
             mach['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
-        # Get wifi hardware description.
+        # Get WiFi hardware description.
         wifiSearch = re.search(r"Wireless interface", lshwData)
         if wifiSearch:
             wifiSectionStart = lshwData[wifiSearch.start():]
