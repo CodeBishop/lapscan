@@ -34,7 +34,10 @@
 #   Clean out all the cruft marked DEBUG in this code.
 #   Find a way to identify SATA vs IDE drives.
 #   Is there a way to identify dedicated vs integrated graphics?
+#   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
 #   Grep a directory of collected raw data text files for bluetooth. Does it sometime show up in lsusb output?
+#   Add a sudo check and see if you can make it prompt for the admin password rather than telling the user to try again.
+#   The thinkpad t61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
 #
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
@@ -115,8 +118,8 @@ class Field:
 
 
 # Words that should be stripped out of hardware fields before displaying them.
-junkWords = 'corporation', 'electronics', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
-            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc.', 'network', 'connection', 'computer'
+junkWords = 'corporation', 'electronics', 'ltd\.', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
+            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc\.', 'inc', 'network', 'connection', 'computer'
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
@@ -311,6 +314,7 @@ def interpretHdparm(rawDict, mach):
         if rawDict[devName] != "":
             # If a found drive is a fixed drive (and not a removable USB drive).
             if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
+                print "DEBUG: " + devName
                 name = "hdd" + str(driveNumber)
                 # Get the size of the hard drive.
                 mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
@@ -323,9 +327,9 @@ def interpretHdparm(rawDict, mach):
 
     # Construct the hard drive description field.
     hddDesc = ""
-    try:
-        for driveNumber in [1, 2]:
-            name = "hdd" + str(driveNumber)
+    for driveNumber in [1, 2]:
+        name = "hdd" + str(driveNumber)
+        if mach[name + " mb"].status() == FIELD_HAS_DATA:
             # If there's a second drive then put a plus in the description.
             if driveNumber == 2:
                 hddDesc += " + "
@@ -333,10 +337,7 @@ def interpretHdparm(rawDict, mach):
             size = str(int(mach[name + " mb"].value()) / 1000)
             model = mach[name + " model"].value()
             hddDesc += size + "GB " + model
-        mach["hdd desc"].setValue(hddDesc)
-    except ValueError:
-        if __name__ == '__main__':
-            pass  # Bad data should just result in a blank field
+    mach["hdd desc"].setValue(hddDesc)
 
 
 # Interpret the lsb_release output to determine OS version.
