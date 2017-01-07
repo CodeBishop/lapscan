@@ -33,6 +33,11 @@
 #       which seems to be missing the rpm data.
 #   Check that the hdd code is correctly describing a dual-hard drive machine.
 #   Clean out all the cruft marked DEBUG in this code.
+#   Reconsider having hdparm check for /dev/hda. Does this ever show up?
+#   Add the output from "ls /dev" to you raw data so you can potentially track which devices show up in there.
+#
+#   HIGHEST PRIORITY: Failed regexes need to stop crashing the program.
+#
 
 
 # Evaluations to be Made
@@ -123,9 +128,7 @@ fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'syst
               'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
               'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam make',
               'bluetooth make', 'bluetooth model', 'video make', 'video model', 'ethernet make', 'ethernet model',
-              'audio make', 'audio model', 'usb left', 'usb right', 'usb front', 'usb back', 'vga ok',
-              'vga toggle ok', 'vga keys', 'wifi ok', 'wifi keys', 'volume ok', 'volume keys', 'headphone jack ok',
-              'microphone ok', 'microphone jacks', 'media controls ok', 'media keys', 'lid closed description']
+              'audio make', 'audio model']
 
 
 # Interpret the CPU frequency if the raw data is present.
@@ -185,6 +188,22 @@ def interpretDmidecodeMemory(rawDict, mach):
         mach["ram desc"].setRawValue(ramDesc)
 
 
+# Interpret the processor information from dmidecode output.
+def interpretDmidecodeProcessor(rawDict, mach):
+    # Get CPU manufacturer.
+    result = re.search(r"Manufacturer:[\s\t]*(.*)\n", rawDict['dmidecode_processor'])
+    if result:
+        mach['cpu make'].setValue(result.groups()[0])
+
+    # Get CPU model but do not include anything after the @ symbol because we get the frequency elsewhere.
+    result = re.search(r"Version:[\s\t]*(.*?)(?:@|\n)", rawDict['dmidecode_processor'])
+    if result:
+        model = result.groups()[0]
+        # Remove redundant manufacturer name from model description.
+        model = re.sub(r"Intel|AMD", "", model, flags=re.IGNORECASE)
+        mach["cpu model"].setValue(model)
+
+
 # Interpret the identifying information of the system using the dmidecode output.
 def interpretDmidecodeSystem(rawDict, mach):
     assert 'dmidecode_system_make' in rawDict and \
@@ -224,7 +243,7 @@ def interpretGetconf(rawDict, mach):
 def interpretHdparm(rawDict, mach):
     driveNumber = 1
     # Look for an IDE drive and one or two SATA drives.
-    for devName in ['hdparm_hda', 'hdparm_sda', 'hdparm_sdb']:
+    for devName in ['hdparm_sda', 'hdparm_sdb', 'hdparm_sdc']:
         if rawDict[devName] != "":
             # If a found drive is a fixed drive (and not a removable USB drive).
             if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
@@ -236,12 +255,9 @@ def interpretHdparm(rawDict, mach):
                 # Get the model of the hard drive.
                 result = re.search(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
                 if result:
-                    mach[name + " model"].setValue(result.groups()[0])
-                # Note the drive connector type.
-                if devName[8:] == "hdparm_h":
-                    mach[name + " connector"].setValue("IDE")
-                else:
-                    mach[name + " connector"].setValue("SATA")
+                    model = result.groups()[0]
+                    model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
+                    mach[name + " model"].setValue(model)
             # Prepare to look for another drive.
             driveNumber += 1
 
@@ -266,22 +282,6 @@ def interpretLSBRelease(rawDict, mach):
     result = re.search(r"Description:[\s\t]*(.*)\n", rawDict['lsb_release'])
     if result:
         mach['os version'].setValue(result.groups()[0])
-
-
-# Interpret the lscpu output to determine CPU make and model.
-def interpretLSCPU(rawDict, mach):
-    # Get CPU manufacturer.
-    result = re.search(r"Vendor ID:[\s\t]*(.*)\n", rawDict['lscpu'])
-    if result:
-        mach['cpu make'].setValue(result.groups()[0])
-
-    # Get CPU model.
-    result = re.search(r"Model name:[\s\t]*(.*)@", rawDict['lscpu'])
-    if result:
-        model = result.groups()[0]
-        # Remove redundant manufacturer name from model description.
-        model = re.sub(r"Intel|AMD", "", model, flags=re.IGNORECASE)
-        mach["cpu model"].setValue(model)
 
 
 # Interpret the lshw output if the raw data is present.
@@ -505,7 +505,7 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get CPU speed.
-        print "Determining maximum CPU speed."
+        print "Determining maximum CPU frequency."
         try:
             rawDict['cpuinfo_max_freq'] = open("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq").read()
         except IOError as errMsg:
@@ -526,6 +526,7 @@ def readRawData(rawFilePath=None):
             rawDict['hdparm_hda'] = str(terminalCommand("hdparm -I /dev/hda"))
             rawDict['hdparm_sda'] = str(terminalCommand("hdparm -I /dev/sda"))
             rawDict['hdparm_sdb'] = str(terminalCommand("hdparm -I /dev/sdb"))
+            rawDict['hdparm_sdc'] = str(terminalCommand("hdparm -I /dev/sdc"))
         except OSError as errMsg:
             print "WARNING: Some hard drive information may unavailable. Execution of hdparm command " \
                   "failed with message: " + str(errMsg)
@@ -539,18 +540,18 @@ def readRawData(rawFilePath=None):
                   "with message: " + str(errMsg)
 
         # Get CPU make and model.
-        print "Reading CPU make and model"
+        print "Reading processor information."
         try:
-            rawDict['lscpu'] = str(terminalCommand("lscpu"))
+            rawDict['dmidecode_processor'] = str(terminalCommand("dmidecode -t processor"))
         except OSError as errMsg:
-            print "WARNING: CPU model could not be determined. Execution of lscpu failed " \
+            print "WARNING: CPU model could not be determined. Execution of dmidecode failed " \
                   "with message: " + str(errMsg)
 
         # Get bulk information about all hardware.
         print "Reading misc hardware info."
         try:
-            # pass #DEBUG: lshw should be disabled during testing because it's slow.
-            rawDict['lshw'] = str(terminalCommand("lshw"))
+            pass #DEBUG: lshw should be disabled during testing because it's slow.
+            # rawDict['lshw'] = str(terminalCommand("lshw"))
         except OSError as errMsg:
             print "WARNING: Most hardware information could not be obtained. Execution of lshw command " \
                   "failed with message: " + str(errMsg)
@@ -692,10 +693,10 @@ def main():
         # Interpret all the rest of the raw data.
         interpretCPUFreq(rawDict, machine)
         interpretDmidecodeMemory(rawDict, machine)
+        interpretDmidecodeProcessor(rawDict, machine)
         interpretGetconf(rawDict, machine)
         interpretHdparm(rawDict, machine)
         interpretLSBRelease(rawDict, machine)
-        interpretLSCPU(rawDict, machine)
         interpretLSHW(rawDict, machine)
         interpretLSUSB(rawDict, machine)
         interpretUPower(rawDict, machine)
