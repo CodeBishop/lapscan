@@ -3,27 +3,15 @@
 # TODO
 #   Make the WiFi section append something like "a/b/g/n" to show WiFi available modes.
 #   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
-#   Test the program with blank input files to simulate all the different ways that re.search() might fail.
-#   Add functionality to store the raw console outputs as strings, ask the user at the end if everything was
-#   correct. If the user says no then ask them for an explanation and email it along with the raw data to myself.
-#   Add a function for extracting lshw sections so that I don't risk having re.search pull unfound fields from
-#   later sections thereby producing garbage data for fields.
-#   Make the program able to gracefully handle machines that have only one RAM slot and machines that four.
+#   Test the program with raw files that have garbage data in each section to see if it will crash anything.
+#   Review your list accesses to look for potential invalid indexing exception throws.
+#   Add functionality to ask if the data produced is correct and if they say no then ask for an 
+#   explanation and send it along with the raw data to myself somehow.
+#   Add a function for dividing lshw sections into a list so that I don't risk having re.search pull unfound
+#   fields from and thereby produce garbage data for fields.
+#   Run the program on more desktops to test how well it handles them.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
-#   Determine if there's a way to get the Bluetooth data. If not then eliminate the field.
-#   Make the program prompt for the admin password rather than complain that it's not in sudo mode.
-#   Rewrite the LSHW reading code to pull data off in sections so that it cannot accidentally read the vendor
-#       for a product from the later section of a different product.
-#   Change the program so that it reads all it's data into the raw file before processing it. That way if the
-#       processing crashes then you have the RAW file to use for recreating the problem and don't need the machine.
-#   Make sure the program handles it gracefully if:
-#       The template file is not found.
-#       The raw file already exists and needs to be overwritten (not appended).
-#       The ods file already exists and needs to be overwritten (not appended).
-#   Check that you are differentiating IDE from SATA hard drives. Try "hdparm -I /dev/sd?" (replace ? with letter).
-#   Make sure it can identify when a hard drive is an SSD. That info needs to be highlighted, particularly when a
-#       machine has two hard drives like the Zenbooks do. It needs to distinguish an SSD from an SD card or USB drive.
-#   Suppress all warning messages produced by not being sudo.
+#   Make sure the program handles it gracefully if the template file is not found.
 #   See if lsusb -v can give you more info about a webcam such as its resolution.
 #   Consider using lscpu and putting info about number of cores and threads into the CPU description.
 #   Add a feature to ask the user if they would like to see the generated spreadsheet, if so then open it for them.
@@ -35,30 +23,11 @@
 #   Find a way to identify SATA vs IDE drives.
 #   Is there a way to identify dedicated vs integrated graphics?
 #   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
-#   Grep a directory of collected raw data text files for bluetooth. Does it sometime show up in lsusb output?
-#   Add a sudo check and see if you can make it prompt for the admin password rather than telling the user to try again.
-#   The Thinkpad T61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
+#   Grep a directory of collected raw data text files for bluetooth to see how often lsusb shows it.
+#   The thinkpad t61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
 #
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
-
-
-# Evaluations to be made
-#   Run the stress test.
-#   Update the OS thereby confirming that the WiFi works.
-#   Disable WiFi, confirming that the WiFi on/off button/switch works and preparing to test ethernet.
-#   Plug in ethernet (WiFi still off) and install Synaptic and LXDE, confirming that ethernet works.
-#   Play optical discs to confirm the drive works, test the media controls, volume controls and headphone jack.
-#   Run Cheese to confirm webcam works.
-#   Test the ethernet jack.
-#   Test USB ports (don't miss the eSATA ones).
-#   Test the video ports: DVI, VGA, HDMI, Display port.
-#   Test the microphone.
-#   Close the lid to see what happens.
-#   Disable the screen saver and password (for the store's convenience).
-#   Power down and check that the RAM has green stickers.
-#   Clean the laptop, put FreeGeek logo sticker and ID sticker on it. Record it in the build book.
-
 
 # Color codes for printing in color to the terminal.
 #   default color \033[00m
@@ -121,7 +90,8 @@ class Field:
 junkWords = 'corporation', 'electronics', 'ltd\.', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
             '\(r\)', 'cmos', 'co\.', 'cpu', 'inc\.', 'inc', 'network', 'connection', 'computer'
 
-# Words that should be swapped out with tidier words (sometimes just better capitalization). Keys are case-insensitive.
+# Words that should be swapped out with tidier words (sometimes just better capitalization).
+# Keys are case-insensitive, values are not.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
                     "genuineintel": "Intel", "sony": "Sony"}
 
@@ -314,7 +284,6 @@ def interpretHdparm(rawDict, mach):
         if rawDict[devName] != "":
             # If a found drive is a fixed drive (and not a removable USB drive).
             if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
-                print "DEBUG: " + devName
                 name = "hdd" + str(driveNumber)
                 # Get the size of the hard drive.
                 mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
@@ -691,7 +660,7 @@ def stripExcessWhitespace(string):
 
 # Get the output from a terminal command.
 def terminalCommand(command):
-    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
+    output, _ = subprocess.Popen(["sudo"] + command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
     return output
 
 
@@ -710,10 +679,7 @@ def writeODSFile(mach, templateFilename, outputFilename=None):
         odsOutput.writestr(fileHandle, fileData)
     odsOutput.close()
     odsInput.close()
-    try:
-        os.chmod(outputFilename, 0777)  # Make the ODS file writeable.
-    except OSError:
-        print "Unable to make ODS file writeable."
+    terminalCommand("chmod 0777 " + outputFilename)  # Ensure ODS file is writeable.
 
 
 def writeRawData(rawDict, filePath):
@@ -732,12 +698,21 @@ def writeRawData(rawDict, filePath):
     rawFile = open(filePath, 'w')
     rawFile.write(rawFileContents)
     rawFile.close()
+    terminalCommand("chmod 0777 " + filePath)  # Ensure raw file can be overwritten later.
 
 
 # # ***************************************************************************************
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
 def main():
+    # Attempt to call dmidecode to test for superuser privilege.
+    try:
+        proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
+        proc.wait()
+    except KeyboardInterrupt:
+        assert False, "Cannot proceed without root authority."
+
+    # Process command line arguments and fetch raw data filename if one was given.
     rawFileToLoad = processCommandLineArguments()
 
     # Initialize an empty machine description.
@@ -756,7 +731,7 @@ def main():
         if rawDataName not in rawDataSectionNames:
             print "Unrecognized raw data section named \"" + rawDataName + "\""
 
-    # Check for missing raw data.
+    # Notify for expected raw data sections that were expected but not found.
     for rawDataName in rawDataSectionNames:
         if rawDataName not in rawDict.keys():
             print "Missing raw data section for \"" + rawDataName + "\""
@@ -795,7 +770,7 @@ try:
 
 # Catch-and-release assertion errors.
 except AssertionError as errMsg:
-    print "ERROR: " + str(errMsg) + '\n'
+    print "\nERROR: " + str(errMsg) + '\n'
 
 # Catch all other exceptions so the user won't see traceback dump.
 except:
