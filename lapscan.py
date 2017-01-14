@@ -89,12 +89,14 @@ class Field:
 
 # Words that should be stripped out of hardware fields before displaying them.
 junkWords = 'corporation', 'electronics', 'ltd\.', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
-            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc\.', 'inc', 'network', 'connection', 'computer'
+            '\(r\)', 'cmos', 'co\.', 'cpu', 'inc\.', 'inc', 'network', 'connection', 'computer', 'adapter',\
+            'semiconductor'
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization).
 # Keys are case-insensitive, values are not.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
-                    "genuineintel": "Intel", "sony": "Sony"}
+                    "genuineintel": "Intel", "sony": "Sony", "wireless": "WiFi", "\(pci-express\)": "PCI-E",
+                    "pci express": "PCI-E"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
