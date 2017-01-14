@@ -4,11 +4,11 @@
 #   Make the WiFi section append something like "a/b/g/n" to show WiFi available modes.
 #   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
 #   Test the program with raw files that have garbage data in each section to see if it will crash anything.
-#   Review your list accesses to look for potential invalid indexing exception throws.
+#   Review your list accesses to look for potential invalid indexing exceptions.
 #   Add functionality to ask if the data produced is correct and if they say no then ask for an 
-#   explanation and send it along with the raw data to myself somehow.
+#       explanation and send it along with the raw data to myself somehow.
 #   Add a function for dividing lshw sections into a list so that I don't risk having re.search pull unfound
-#   fields from and thereby produce garbage data for fields.
+#       fields from and thereby produce garbage data for fields.
 #   Run the program on more desktops to test how well it handles them.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
 #   Make sure the program handles it gracefully if the template file is not found.
@@ -20,7 +20,6 @@
 #   Add the code to identify SSD drivers when present and rotational speed when not. Test it on the Optiplex data
 #       which seems to be missing the rpm data.
 #   Clean out all the cruft marked DEBUG in this code.
-#   Find a way to identify SATA vs IDE drives.
 #   Is there a way to identify dedicated vs integrated graphics?
 #   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
 #   Grep a directory of collected raw data text files for bluetooth to see how often lsusb shows it.
@@ -285,14 +284,20 @@ def interpretHdparm(rawDict, mach):
     for devName in ['hdparm_sda', 'hdparm_sdb', 'hdparm_sdc']:
         if rawDict[devName] != "":
             # If a found drive is a fixed drive (and not a removable USB drive).
-            if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
-                name = "hdd" + str(driveNumber)
-                # Get the size of the hard drive.
-                mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
-                # Get the model of the hard drive.
-                model = capture(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
-                model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
-                mach[name + " model"].setValue(model)
+            if __name__ == '__main__':
+                if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
+                    name = "hdd" + str(driveNumber)
+                    # Get the size of the hard drive.
+                    mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
+                    # Get the model of the hard drive.
+                    model = capture(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
+                    model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
+                    mach[name + " model"].setValue(model)
+                    # Get the connector type
+                    if re.search(r"(?i)sata", rawDict[devName]):
+                        mach[name + " connector"].setValue("SATA")
+                    else:
+                        mach[name + " connector"].setValue("IDE")
             # Prepare to look for another drive.
             driveNumber += 1
 
@@ -307,7 +312,8 @@ def interpretHdparm(rawDict, mach):
             # Pull together various fields of hard drive description.
             size = str(int(mach[name + " mb"].value()) / 1000)
             model = mach[name + " model"].value()
-            hddDesc += size + "GB " + model
+            connector = mach[name + " connector"].value()
+            hddDesc += size + "GB " + connector + ' ' + model
     mach["hdd desc"].setValue(hddDesc)
 
 
