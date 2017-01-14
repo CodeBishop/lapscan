@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
-# TO DO
-#   Make the wifi section append something like "a/b/g/n" to show wifi available modes.
+# TODO
+#   Make the WiFi section append something like "a/b/g/n" to show WiFi available modes.
 #   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
 #   Test the program with raw files that have garbage data in each section to see if it will crash anything.
 #   Review your list accesses to look for potential invalid indexing exception throws.
@@ -28,7 +28,6 @@
 #
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #
-
 
 # Color codes for printing in color to the terminal.
 #   default color \033[00m
@@ -335,7 +334,7 @@ def interpretLSHW(rawDict, mach):
         else:
             mach['optical make'].setStatus(FIELD_NO_DATA_FOUND)
 
-        # Get wifi hardware description.
+        # Get WiFi hardware description.
         wifiSearch = re.search(r"Wireless interface", lshwData)
         if wifiSearch:
             wifiSectionStart = lshwData[wifiSearch.start():]
