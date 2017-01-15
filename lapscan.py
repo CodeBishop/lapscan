@@ -20,7 +20,8 @@
 #   Add the code to identify SSD drivers when present and rotational speed when not. Test it on the Optiplex data
 #       which seems to be missing the rpm data.
 #   Clean out all the cruft marked DEBUG in this code.
-#   Is there a way to identify dedicated vs integrated graphics?
+#   Is there a way to identify discrete vs integrated graphics?
+#   Is there a way to identify how much video RAM a discrete video card is using?
 #   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
 #   Grep a directory of collected raw data text files for bluetooth to see how often lsusb shows it.
 #   The thinkpad t61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
@@ -88,13 +89,13 @@ class Field:
 # Words that should be stripped out of hardware fields before displaying them.
 junkWords = 'corporation', 'electronics', 'ltd\.', 'ltd', 'chipset', 'graphics', 'controller', 'processor', '\(tm\)',\
             '\(r\)', 'cmos', 'co\.', 'cpu', 'inc\.', 'inc', 'network', 'connection', 'computer', 'adapter',\
-            'semiconductor'
+            'semiconductor', 'audio'
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization).
 # Keys are case-insensitive, values are not.
 correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
                     "genuineintel": "Intel", "sony": "Sony", "wireless": "WiFi", "\(pci-express\)": "PCI-E",
-                    "pci express": "PCI-E"}
+                    "pci express": "PCI-E", "nvidia": "Nvidia"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
@@ -237,9 +238,20 @@ def interpretDmidecodeProcessor(rawDict, mach):
         print "Missing raw data for dmidecode_processor"
         return
 
+    # Determine the CPU manufacturer.
     mach['cpu make'].setValue(capture(r"Manufacturer:[\s\t]*(.*)\n", rawDict['dmidecode_processor']))
+
+    # Determine the CPU model.
     model = capture(r"Version:[\s\t]*(.*?)(?:@|\n)", rawDict['dmidecode_processor'])
-    mach["cpu model"].setValue(re.sub(r"(?i)intel|amd", "", model))
+
+    # Correct for CPUs that report their model under "family" instead of "version".
+    if re.search(r"(?i)not specified", model):
+        model = capture(r"Family:[\s\t]*(.*?)\n", rawDict['dmidecode_processor'])
+
+    # Remove superfluous naming of the manufacturer in the model string.
+    model = re.sub(r"(?i)intel|amd", "", model)
+
+    mach["cpu model"].setValue(model)
 
 
 # Interpret the identifying information of the system using the dmidecode output.
@@ -770,7 +782,7 @@ def main():
     # Output our program's findings.
     print  # Blank line
     printBuildSheet(machine)
-    writeODSFile(machine, 'template.ods')
+    writeODSFile(machine, 'template, laptop build.ods')
 
 
 try:
