@@ -189,16 +189,13 @@ def interpretDmidecodeMemory(rawDict, mach):
     ramSizes = list()
     for ramDesc in ramDescs:
         size = capture(r"(?i)size:\s*(\d+)\s*mb", ramDesc, IGNORE_CAPTURE_FAILURE)
+
         # If any RAM slot has a module but not a discernible size then just give up.
         if size == MISSING_FIELD:
             mach["ram desc"].setRawValue("(Unable to determine RAM layout)")
             return
-        # If any RAM has a module < 1 gb in size then give up (the layout work isn't worth it).
-        if int(size) < 1024:
-            mach["ram desc"].setRawValue("(Describing RAM modules less than 1GB isn't handled)")
-            return
-        else:
-            ramSizes.append(int(size))
+
+        ramSizes.append(int(size))
 
     # Tally and record the ram sizes while checking for a common size.
     totalRam = 0
@@ -216,7 +213,10 @@ def interpretDmidecodeMemory(rawDict, mach):
             commonSize = NO_COMMON_SIZE
 
     # Start building the RAM description field.
-    ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
+    if totalRam >= 1024:
+        ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
+    else:
+        ramDesc = str("%.0f" % totalRam) + " Mb = "
 
     # If the RAM is not all the same size then describe it by summation.
     if commonSize == NO_COMMON_SIZE:
@@ -511,7 +511,7 @@ def printBuildSheet(mach):
 
 def processCommandLineArguments():
     global debugMode, skipLSHW
-    rawFileToLoad = ""
+    rawFileToLoad = None
 
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
@@ -699,7 +699,10 @@ def writeODSFile(mach, templateFilename, outputFilename=None):
         odsOutput.writestr(fileHandle, fileData)
     odsOutput.close()
     odsInput.close()
-    terminalCommand("chmod 0777 " + outputFilename)  # Ensure ODS file is writeable.
+
+    # If operating as super-user then ensure that output file will be writeable by regular users.
+    if os.geteuid() == 0:
+        terminalCommand("chmod 0777 " + outputFilename)  # Ensure ODS file is writeable.
 
 
 def writeRawData(rawDict, filePath):
@@ -725,25 +728,27 @@ def writeRawData(rawDict, filePath):
 # # *******************************  START OF MAIN ****************************************
 # # ***************************************************************************************
 def main():
-    # Attempt to call dmidecode to test for superuser privilege.
-    try:
-        proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
-        proc.wait()
-    except KeyboardInterrupt:
-        assert False, "Cannot proceed without root authority."
-
-    # Process command line arguments and fetch raw data filename if one was given.
-    rawFileToLoad = processCommandLineArguments()
-
     # Initialize an empty machine description.
     machine = dict()
     for fieldName in fieldNames:
         machine[fieldName] = Field(fieldName)
 
-    # Fetch all the raw data describing the machine.
-    if not rawFileToLoad == "":
+    # Process command line arguments and fetch raw data filename if one was given.
+    rawFileToLoad = processCommandLineArguments()
+
+    # If a raw data file has been specified then load it.
+    if rawFileToLoad:
         rawDict = readRawData(rawFileToLoad)
+    # Else, read raw data from this machine.
     else:
+        # Attempt to call dmidecode in order to establish superuser privilege.
+        try:
+            proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
+            proc.wait()
+        except KeyboardInterrupt:
+            assert False, "Cannot proceed without root authority."
+
+        # Order the acquisition of the raw data from this machine.
         rawDict = readRawData(None)
 
     # Notify for unrecognized raw data sections that were found.
@@ -758,6 +763,7 @@ def main():
             rawDict[rawDataName] = ""
 
     print "Interpreting data."
+
     # Interpret dmidecode first so the system will have a proper id.
     interpretDmidecodeSystem(rawDict, machine)
 
