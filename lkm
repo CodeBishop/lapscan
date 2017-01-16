@@ -719,7 +719,14 @@ def terminalCommand(command):
 def writeODSFile(mach, templateFilename, outputFilename=None):
     if not outputFilename:
         outputFilename = mach['system id'].value() + '.ods'
-    odsInput = zipfile.ZipFile(templateFilename, 'r')
+
+    # Attempt to open the template file.
+    try:
+        odsInput = zipfile.ZipFile(templateFilename, 'r')
+    except IOError:
+        print "Unable to open template file: " + templateFilename
+        return
+
     odsOutput = zipfile.ZipFile(outputFilename, 'w')
     for fileHandle in odsInput.infolist():
         fileData = odsInput.read(fileHandle.filename)
@@ -819,8 +826,10 @@ def main():
     # Output our program's findings.
     print  # Blank line
     printBuildSheet(machine)
+    print
     writeODSFile(machine, 'template, laptop build.ods')
-
+    writeODSFile(machine, 'template, laptop as-is.ods', "as-is, " + machine['system id'].value() + '.ods')
+    print
 
 try:
     main()
