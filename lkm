@@ -93,15 +93,15 @@ junkWords = 'corporation', 'electronics', 'ltd\.', 'ltd', 'chipset', 'graphics',
 
 # Words that should be swapped out with tidier words (sometimes just better capitalization).
 # Keys are case-insensitive, values are not.
-correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "wdc": "Western Digital",
+correctableWords = {"lenovo": "Lenovo", "asustek": "Asus", "toshiba": "Toshiba", "solid state device": "SSD",
                     "genuineintel": "Intel", "sony": "Sony", "wireless": "WiFi", "\(pci-express\)": "PCI-E",
                     "pci express": "PCI-E", "nvidia": "Nvidia"}
 
 # Define a partial list of the fields available (further ones may get appended elsewhere in the code).
 fieldNames = ['os version', 'os bit depth', 'system make', 'system model', 'system version', 'system serial',
               'system id', 'cpu make', 'cpu model', 'cpu ghz', 'ram mb total', 'ram type', 'ram mhz', 'ram desc',
-              'hdd1 rpm', 'hdd1 mb', 'hdd1 model', 'hdd1 connector',
-              'hdd2 rpm', 'hdd2 mb', 'hdd2 model', 'hdd2 connector', 'hdd desc',
+              'hdd1 rpm', 'hdd1 mb', 'hdd1 make', 'hdd1 connector',
+              'hdd2 rpm', 'hdd2 mb', 'hdd2 make', 'hdd2 connector', 'hdd desc',
 # EXAMPLE:    'SSD',      '20000'    'Sandisk'     'SATA'
               'cd type', 'dvd type', 'optical make', 'dvdram', 'wifi make',
               'wifi model', 'wifi modes', 'batt present', 'batt max', 'batt orig', 'batt percent', 'webcam model',
@@ -306,23 +306,45 @@ def interpretHdparm(rawDict, mach):
     # Look for drives.
     for devName in ['hdparm_sda', 'hdparm_sdb', 'hdparm_sdc']:
         if rawDict[devName] != "":
-            # If a found drive is a fixed drive (and not a removable USB drive).
-            if __name__ == '__main__':
-                if re.search(r"\n[\s\t]*frozen", rawDict[devName]):
-                    name = "hdd" + str(driveNumber)
-                    # Get the size of the hard drive.
-                    mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
-                    # Get the model of the hard drive.
-                    model = capture(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
-                    model = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
-                    mach[name + " model"].setValue(model)
-                    # Get the connector type
-                    if re.search(r"(?i)sata", rawDict[devName]):
-                        mach[name + " connector"].setValue("SATA")
-                    else:
-                        mach[name + " connector"].setValue("IDE")
-            # Prepare to look for another drive.
-            driveNumber += 1
+            # Check that is in fact a non-removable, ATA drive.
+            if re.search(r"\n[\s\t]*Transport:.*ATA", rawDict[devName]):
+                name = "hdd" + str(driveNumber)
+
+                # Get the RPM of the hard drive.
+                rpm = capture(r"\n[\s\t]*Nominal Media Rotation Rate:[\s\t]*(.*)", rawDict[devName])
+                if rpm != MISSING_FIELD:
+                    if rpm.isdigit():
+                        rpm = ""
+                        # rpm = "@ " + rpm + " RPM"
+                    mach[name + " rpm"].setValue(rpm)
+
+                # Get the size of the hard drive.
+                mach[name + " mb"].setValue(capture(r"1000\*1000:[\s\t]*(\d+)", rawDict[devName]))
+
+                # Determine the hard drive manufacturer based on the model number.
+                model = capture(r"Model Number:[\s\t]*(.+)\n", rawDict[devName])
+                make = ""
+                if re.search(r"(?i)hitachi|^HT\S", model):
+                    make = "Hitachi"
+                elif re.search(r"(?i)seagate|^ST\S", model):
+                    make = "Seagate"
+                elif re.search(r"(?i)western digital|^WD\S", model):
+                    make = "Western Digital"
+                elif re.search(r"(?i)sandisk", model):
+                    make = "SanDisk"
+                elif re.search(r"(?i)fujitsu", model):
+                    make = "Fujitsu"
+                else:
+                    # If manufacturer is unrecognized then refer to them by model number.
+                    make = re.sub(r"(?i)\W+(\d+\s*GB)", "", model)  # Remove redundant capacity info.
+                mach[name + " make"].setValue(make)
+                # Get the connector type
+                if re.search(r"(?i)sata", rawDict[devName]):
+                    mach[name + " connector"].setValue("SATA")
+                else:
+                    mach[name + " connector"].setValue("IDE")
+                # Prepare to look for another drive.
+                driveNumber += 1
 
     # Construct the hard drive description field.
     hddDesc = ""
@@ -334,9 +356,10 @@ def interpretHdparm(rawDict, mach):
                 hddDesc += " + "
             # Pull together various fields of hard drive description.
             size = str(int(mach[name + " mb"].value()) / 1000)
-            model = mach[name + " model"].value()
+            make = mach[name + " make"].value()
             connector = mach[name + " connector"].value()
-            hddDesc += size + "GB " + connector + ' ' + model
+            hddDesc += size + "GB " + connector + ' ' + make
+            hddDesc += ' ' + mach[name + " rpm"].value()
     mach["hdd desc"].setValue(hddDesc)
 
 
