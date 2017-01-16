@@ -212,22 +212,33 @@ def interpretDmidecodeMemory(rawDict, mach):
         if ramSizes[i] != commonSize:
             commonSize = NO_COMMON_SIZE
 
+    def RAMSizeString(byteCount):
+        if byteCount >= 1024:
+            return str("%.0f" % (byteCount / 1024.0))
+        else:
+            return str("%.0f" % byteCount)
+
+    def RAMSizeUnit(byteCount):
+        if byteCount >= 1024:
+            return "Gb"
+        else:
+            return "Mb"
+
     # Start building the RAM description field.
-    if totalRam >= 1024:
-        ramDesc = str("%.0f" % (totalRam / 1024.0)) + " Gb = "
-    else:
-        ramDesc = str("%.0f" % totalRam) + " Mb = "
+    ramDesc = RAMSizeString(totalRam) + " " + RAMSizeUnit(totalRam) + " = "
 
     # If the RAM is not all the same size then describe it by summation.
     if commonSize == NO_COMMON_SIZE:
-        ramDesc += str("%.0f" % (ramSizes[0] / 1024.0))
+        ramDesc += RAMSizeString(ramSizes[0])
         for i in range(1, len(ramSizes)):
-            ramDesc += " + " + str("%.0f" % (ramSizes[i] / 1024.0))
-        ramDesc += " Gb"
+            ramDesc += " + " + RAMSizeString(ramSizes[i])
+            if ramSizes[i] < 1024:
+                ramDesc += "Mb"
+        ramDesc += " " + RAMSizeUnit(ramSizes[-1])
 
     # If all the RAM is the same size then describe it as a multiple.
     else:
-        ramDesc += str(len(ramSizes)) + " x " + str("%.0f" % (commonSize / 1024.0)) + " Gb"
+        ramDesc += str(len(ramSizes)) + " x " + RAMSizeString(commonSize) + RAMSizeUnit(commonSize)
 
     mach["ram desc"].setRawValue(ramDesc)
 
