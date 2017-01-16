@@ -11,14 +11,11 @@
 #       fields from and thereby produce garbage data for fields.
 #   Run the program on more desktops to test how well it handles them.
 #   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
-#   Make sure the program handles it gracefully if the template file is not found.
 #   See if lsusb -v can give you more info about a webcam such as its resolution.
 #   Consider using lscpu and putting info about number of cores and threads into the CPU description.
 #   Add a feature to ask the user if they would like to see the generated spreadsheet, if so then open it for them.
 #   Consider adding a stress test option.
 #   See if you can disable the screensaver and password automatically (for the store's convenience).
-#   Add the code to identify SSD drivers when present and rotational speed when not. Test it on the Optiplex data
-#       which seems to be missing the rpm data.
 #   Clean out all the cruft marked DEBUG in this code.
 #   Is there a way to identify discrete vs integrated graphics?
 #   Is there a way to identify how much video RAM a discrete video card is using?
@@ -307,7 +304,7 @@ def interpretHdparm(rawDict, mach):
     for devName in ['hdparm_sda', 'hdparm_sdb', 'hdparm_sdc']:
         if rawDict[devName] != "":
             # Check that is in fact a non-removable, ATA drive.
-            if re.search(r"\n[\s\t]*Transport:.*ATA", rawDict[devName]):
+            if re.search(r"SMART feature set", rawDict[devName]):
                 name = "hdd" + str(driveNumber)
 
                 # Get the RPM of the hard drive.
