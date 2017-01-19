@@ -437,8 +437,8 @@ def interpretLSUSB(rawDict, mach):
 
 # Interpret "upower --dump" output.
 def interpretUPower(rawDict, mach):
-    mach['batt max'].setValue(capture(r"energy-full:\s*(\d+)\.", rawDict['upower']))
-    mach['batt orig'].setValue(capture(r"energy-full-design:\s*(\d+)\.", rawDict['upower']))
+    mach['batt max'].setValue(capture(r"energy-full:\s*(\d+)", rawDict['upower']))
+    mach['batt orig'].setValue(capture(r"energy-full-design:\s*(\d+)", rawDict['upower']))
     # The capacity value given by upower won't match match the energy-full / energy-full-design. Calculate manually.
     try:
         percentage = float(mach['batt max'].value()) / float(mach['batt orig'].value())
