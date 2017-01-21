@@ -27,7 +27,8 @@
 #       It needs to be externally accessible so that bug reports can be remotely investigated.
 #   Figure out a way to generate the spreadsheet and open it directly without leaving a copy on the hard drive (unless
 #       a command-line option requests that it be saved). The program shouldn't be leaving spreadsheets and raw
-#       text files all over the place.
+#       text files all over the place. I found some useful stuff on mmap and binary data at:
+#           https://www.safaribooksonline.com/library/view/python-cookbook-3rd/9781449357337/ch05s10.html
 #   Set the program up to look in /etc/lkm for its templates in the local directory by default, then to look in the
 #       /etc/lkm directory.
 #   Add a --help option.
@@ -36,6 +37,7 @@
 #   Add the option to say "lkm -t <sometemplate.ods>" and it will manually go to town on that template.
 #   Add a command-line option for showing a table of machine dictionary entry names and values so that a user can
 #       edit existing templates or make their own ones.
+#   Fix that bug where the WiFi description never puts a space before 802.11.
 
 # Color codes for printing in color to the terminal.
 #   default color \033[00m
@@ -554,6 +556,7 @@ def printBuildSheet(mach):
 def processCommandLineArguments():
     global debugMode, skipLSHW
     rawFileToLoad = None
+    # helpScreenContents
 
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
