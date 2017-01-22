@@ -25,16 +25,13 @@
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #       An SQL server would probably be the best option.
 #       It needs to be externally accessible so that bug reports can be remotely investigated.
-#   Figure out a way to generate the spreadsheet and open it directly without leaving a copy on the hard drive (unless
-#       a command-line option requests that it be saved). The program shouldn't be leaving spreadsheets and raw
-#       text files all over the place. I found some useful stuff on mmap and binary data at:
+#   Set it up that the program asks if you want a spreadsheet and if you say yes then it builds one in the /tmp
+#       directory (where it will get erased on next reboot) and opens it for the user. Alternatively, you could try
+#       creating the file purely in the RAM by searching for more info about mmap and binary data at:
 #           https://www.safaribooksonline.com/library/view/python-cookbook-3rd/9781449357337/ch05s10.html
-#   Set the program up to look in /etc/lkm for its templates in the local directory by default, then to look in the
-#       /etc/lkm directory.
-#   Add a --help option.
-#   Set the program up to automatically identify laptops vs desktop and choose the correct template. The as-is
-#       template can be something where you type "lkm as-is" or "lkm -t as-is".
-#   Add the option to say "lkm -t <sometemplate.ods>" and it will manually go to town on that template.
+#   Set the program up to look for templates in the local directory by default, then to look in the /etc/lkm directory.
+#   Add a --help option and figure out a way to exit the program without an error message.
+#   Add the option to say "lkm -t <sometemplate.ods>" and it will manually go to town on that ODS/ODT template.
 #   Add a command-line option for showing a table of machine dictionary entry names and values so that a user can
 #       edit existing templates or make their own ones.
 #   Fix that bug where the WiFi description never puts a space before 802.11.
@@ -556,13 +553,18 @@ def printBuildSheet(mach):
 def processCommandLineArguments():
     global debugMode, skipLSHW
     rawFileToLoad = None
-    # helpScreenContents
+    helpScreenContents = """
+    Usage: lkm <options> <optional raw file>
+"""
 
     for item in sys.argv[1:]:
         if item == '-d' or item == '--debug':
             debugMode = True
         elif item == '-l':
             skipLSHW = True
+        elif item == "--help" or item == "-h":
+            print helpScreenContents
+            assert False, "clean exit"
         elif item[0] == '-':
             assert False, "Unrecognized command option: \"" + item + "\""
         else:
@@ -729,8 +731,8 @@ def terminalCommand(command):
     return output
 
 
-# Fill-in a build sheet given a template.
-def writeODSFile(mach, templateFilename, outputFilename=None):
+# Fill-in a build sheet given a template in Libre Office format (.ods, .odt, ...).
+def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
     if not outputFilename:
         outputFilename = mach['system id'].value() + '.ods'
 
@@ -841,9 +843,9 @@ def main():
     print  # Blank line
     printBuildSheet(machine)
     print
-    writeODSFile(machine, 'template, laptop build.ods')
-    writeODSFile(machine, 'test.odt')
-    writeODSFile(machine, 'template, laptop as-is.ods', "as-is, " + machine['system id'].value() + '.ods')
+    writeLibreOfficeFile(machine, 'template, laptop build.ods')
+    writeLibreOfficeFile(machine, 'test.odt')
+    writeLibreOfficeFile(machine, 'template, laptop as-is.ods', "as-is, " + machine['system id'].value() + '.ods')
     print
 
 try:
@@ -851,7 +853,8 @@ try:
 
 # Catch-and-release assertion errors.
 except AssertionError as errMsg:
-    print "\nERROR: " + str(errMsg) + '\n'
+    if errMsg != "clean exit":
+        print "\nERROR: " + str(errMsg) + '\n'
 
 # Catch all other exceptions so the user won't see traceback dump.
 except:
