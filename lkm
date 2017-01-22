@@ -54,7 +54,7 @@ COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
 FIELD_NOT_INITIALIZED, FIELD_NO_DATA_FOUND, FIELD_HAS_DATA = range(3)
 DEFAULT_SYSTEM_ID = "unidentified_system"
-MISSING_FIELD = '_'
+MISSING_FIELD = ''  # This is what capture() returns if can't find the search string.
 RECORD_CAPTURE_FAILURE, IGNORE_CAPTURE_FAILURE = 1, 2
 
 debugMode = False
@@ -463,6 +463,7 @@ def interpretUPower(rawDict, mach):
 
 # Print a machine's info to the terminal
 def printBuildSheet(mach):
+    dataNotFoundMessage = COLOR_TO_REVERT_TO + 'data not found' + COLOR_TO_USE
     sys.stdout.write(COLOR_TO_USE)
 
     osVersion = mach['os version'].value() + " " + mach['os bit depth'].value() + "-Bit"
@@ -484,7 +485,7 @@ def printBuildSheet(mach):
     hddDescription = mach["hdd desc"].value()
 
     if mach['optical make'].status() == FIELD_NO_DATA_FOUND:
-        opticalDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        opticalDescription = dataNotFoundMessage
     else:
         opticalDescription = ''
         if mach['cd type'].status() == FIELD_HAS_DATA:
@@ -499,7 +500,7 @@ def printBuildSheet(mach):
         wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + '802.11 ' \
             + mach['wifi modes'].value()
     else:
-        wifiDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        wifiDescription = dataNotFoundMessage
 
     if mach['batt max'].status() == FIELD_HAS_DATA:
         batteryDescription = 'Capacity = ' + mach['batt max'].value() + '/' + mach['batt orig'].value() \
@@ -510,28 +511,28 @@ def printBuildSheet(mach):
     if mach['webcam model'].status() == FIELD_HAS_DATA:
         webcamDescription = mach['webcam model'].value()
     else:
-        webcamDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        webcamDescription = dataNotFoundMessage
 
     if mach['bluetooth model'].status() == FIELD_HAS_DATA:
         bluetoothDescription = mach['bluetooth model'].value()
     else:
-        bluetoothDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        bluetoothDescription = dataNotFoundMessage
 
     if mach['video make'].status() == FIELD_HAS_DATA:
         videoDescription = mach['video make'].value() + ' ' + mach['video model'].value()
     else:
-        videoDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        videoDescription = dataNotFoundMessage
 
     # DEBUG: This should confirm Gigabit.
     if mach['ethernet make'].status() == FIELD_HAS_DATA:
         ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value()
     else:
-        ethernetDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        ethernetDescription = dataNotFoundMessage
 
     if mach['audio make'].status() == FIELD_HAS_DATA:
         audioDescription = mach['audio make'].value() + ' ' + mach['audio model'].value()
     else:
-        audioDescription = COLOR_TO_REVERT_TO + 'not found' + COLOR_TO_USE
+        audioDescription = dataNotFoundMessage
 
     # Print the VCN Build Sheet to the console.
     print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
@@ -550,6 +551,7 @@ def printBuildSheet(mach):
     sys.stdout.write(COLOR_TO_REVERT_TO)
 
 
+# Read and interpret all command-line options.
 def processCommandLineArguments():
     global debugMode, skipLSHW
     rawFileToLoad = None
@@ -564,7 +566,7 @@ def processCommandLineArguments():
             skipLSHW = True
         elif item == "--help" or item == "-h":
             print helpScreenContents
-            assert False, "clean exit"
+            exit(0)
         elif item[0] == '-':
             assert False, "Unrecognized command option: \"" + item + "\""
         else:
@@ -686,7 +688,22 @@ def readRawDataFromFile(rawFilePath):
     data = open(rawFilePath).read()
 
     # Restore the raw file into the dictionary.
-    keySearch = re.findall(r"{{{(.*)}}}", data)
+    keySearch = re.findall(r"{{{(.*)}}}", data)assert False
+
+# # Catch-and-release assertion errors.
+# except AssertionError as errMsg:
+#     print "\nERROR: " + str(errMsg) + '\n'
+#
+# # Catch all other exceptions so the user won't see traceback dump.
+# except Exception:
+#     etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
+#     if debugMode:
+#         # If debug mode is active then dump the traceback.
+#         sys.excepthook(etype, evalue, etrace)
+#     if not
+#     print "ERROR: " + str(etype)
+#     print "MESSAGE: " + str(evalue) + "\n"
+
     valSearch = re.findall(r"}}}\n([\s\S]*?)\n\n(?:(?:{{{)|(?:$))", data)
     if keySearch and valSearch and len(keySearch) == len(valSearch):
         for i in range(len(keySearch)):
@@ -759,6 +776,7 @@ def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
         terminalCommand("chmod 0777 " + outputFilename)  # Ensure ODS file is writeable.
 
 
+# Copy out raw data taken from terminal command output to a text file compendium.
 def writeRawData(rawDict, filePath):
     if "raw_file_source" in rawDict:
         print "Raw file not created because raw data was loaded from: " + rawDict["raw_file_source"]
@@ -789,6 +807,10 @@ def main():
 
     # Process command line arguments and fetch raw data filename if one was given.
     rawFileToLoad = processCommandLineArguments()
+
+    # Hide traceback dump unless in debug mode.
+    if not debugMode:
+        sys.tracebacklimit = 0
 
     # If a raw data file has been specified then load it.
     if rawFileToLoad:
@@ -844,23 +866,7 @@ def main():
     printBuildSheet(machine)
     print
     writeLibreOfficeFile(machine, 'template, laptop build.ods')
-    writeLibreOfficeFile(machine, 'test.odt')
     writeLibreOfficeFile(machine, 'template, laptop as-is.ods', "as-is, " + machine['system id'].value() + '.ods')
     print
 
-try:
-    main()
-
-# Catch-and-release assertion errors.
-except AssertionError as errMsg:
-    if errMsg != "clean exit":
-        print "\nERROR: " + str(errMsg) + '\n'
-
-# Catch all other exceptions so the user won't see traceback dump.
-except:
-    etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
-    if debugMode:
-        # If debug mode is active then dump the traceback.
-        sys.excepthook(etype, evalue, etrace)
-    print "ERROR: " + str(etype)
-    print "MESSAGE: " + str(evalue) + "\n"
+main()
