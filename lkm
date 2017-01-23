@@ -2,39 +2,16 @@
 
 # TODO
 #   Make the WiFi section append something like "a/b/g/n" to show WiFi available modes.
-#   Run this on a MacBook and MacBook Pro with Ubuntu to get raw data and test functionality.
-#   Test the program with raw files that have garbage data in each section to see if it will crash anything.
-#   Review your list accesses to look for potential invalid indexing exceptions.
-#   Add functionality to ask if the data produced is correct and if they say no then ask for an 
-#       explanation and send it along with the raw data to myself somehow.
-#   Add a function for dividing lshw sections into a list so that I don't risk having re.search pull unfound
-#       fields from and thereby produce garbage data for fields.
-#   Run the program on more desktops to test how well it handles them.
-#   Come up with a solution to the problem of fields that go past the column width of their ODS entry.
 #   See if lsusb -v can give you more info about a webcam such as its resolution.
-#   Consider using lscpu and putting info about number of cores and threads into the CPU description.
-#   Add a feature to ask the user if they would like to see the generated spreadsheet, if so then open it for them.
 #   Consider adding a stress test option.
 #   See if you can disable the screensaver and password automatically (for the store's convenience).
-#   Clean out all the cruft marked DEBUG in this code.
 #   Is there a way to identify discrete vs integrated graphics?
 #   Is there a way to identify how much video RAM a discrete video card is using?
-#   Add some stuff for identifying HDD make based on model number (Seagate models start with ST, Western Dig with WD).
 #   Grep a directory of collected raw data text files for bluetooth to see how often lsusb shows it.
 #   The thinkpad t61 lists 82566mm for Ethernet, how do I identify that as Intel? Ditto for the 82801h audio.
 #   Start thinking about how to make the program upload the raw text files to a repository where I can collect them.
 #       An SQL server would probably be the best option.
 #       It needs to be externally accessible so that bug reports can be remotely investigated.
-#   Set it up that the program asks if you want a spreadsheet and if you say yes then it builds one in the /tmp
-#       directory (where it will get erased on next reboot) and opens it for the user. Alternatively, you could try
-#       creating the file purely in the RAM by searching for more info about mmap and binary data at:
-#           https://www.safaribooksonline.com/library/view/python-cookbook-3rd/9781449357337/ch05s10.html
-#   Set the program up to look for templates in the local directory by default, then to look in the /etc/lkm directory.
-#   Add a --help option and figure out a way to exit the program without an error message.
-#   Add the option to say "lkm -t <sometemplate.ods>" and it will manually go to town on that ODS/ODT template.
-#   Add a command-line option for showing a table of machine dictionary entry names and values so that a user can
-#       edit existing templates or make their own ones.
-#   Fix that bug where the WiFi description never puts a space before 802.11.
 
 # Color codes for printing in color to the terminal.
 #   default color \033[00m
@@ -659,7 +636,6 @@ def printBuildSheet(mach):
     else:
         videoDescription = dataNotFoundMessage
 
-    # DEBUG: This should confirm Gigabit.
     if mach['ethernet make'].status() == FIELD_HAS_DATA:
         ethernetDescription = mach['ethernet make'].value() + ' ' + mach['ethernet model'].value()
     else:
