@@ -535,6 +535,7 @@ def printBuildSheet(mach):
         audioDescription = dataNotFoundMessage
 
     # Print the VCN Build Sheet to the console.
+    print
     print "OS Version".ljust(FIRST_COL_WIDTH) + osVersion
     print "Model".ljust(FIRST_COL_WIDTH) + modelDescription
     print "CPU".ljust(FIRST_COL_WIDTH) + cpuDescription
@@ -688,21 +689,7 @@ def readRawDataFromFile(rawFilePath):
     data = open(rawFilePath).read()
 
     # Restore the raw file into the dictionary.
-    keySearch = re.findall(r"{{{(.*)}}}", data)assert False
-
-# # Catch-and-release assertion errors.
-# except AssertionError as errMsg:
-#     print "\nERROR: " + str(errMsg) + '\n'
-#
-# # Catch all other exceptions so the user won't see traceback dump.
-# except Exception:
-#     etype, evalue, etrace = sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]
-#     if debugMode:
-#         # If debug mode is active then dump the traceback.
-#         sys.excepthook(etype, evalue, etrace)
-#     if not
-#     print "ERROR: " + str(etype)
-#     print "MESSAGE: " + str(evalue) + "\n"
+    keySearch = re.findall(r"{{{(.*)}}}", data)
 
     valSearch = re.findall(r"}}}\n([\s\S]*?)\n\n(?:(?:{{{)|(?:$))", data)
     if keySearch and valSearch and len(keySearch) == len(valSearch):
@@ -712,6 +699,17 @@ def readRawDataFromFile(rawFilePath):
         errMsg = str(len(keySearch)) + " {{{headers}}} and " + str(len(valSearch)) + " " \
                  "bodies were found in raw data file: " + rawFilePath
         assert False, errMsg
+
+    # Notify for unrecognized raw data sections that were found.
+    for rawDataName in rawDict.keys():
+        if rawDataName not in rawDataSectionNames:
+            print "Unrecognized raw data section named \"" + rawDataName + "\""
+
+    # Notify for expected raw data sections that were expected but not found.
+    for rawDataName in rawDataSectionNames:
+        if rawDataName not in rawDict.keys():
+            print "Missing raw data section for \"" + rawDataName + "\""
+            rawDict[rawDataName] = ""
 
     return rawDict
 
@@ -758,6 +756,9 @@ def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
         odsInput = zipfile.ZipFile(templateFilename, 'r')
     except IOError:
         print "Unable to open template file: " + templateFilename
+        return
+    except zipfile.BadZipfile:
+        print "Unable to recognize LibreOffice format in template file: " + templateFilename
         return
 
     odsOutput = zipfile.ZipFile(outputFilename, 'w')
@@ -827,26 +828,50 @@ def main():
         # Order the acquisition of the raw data from this machine.
         rawDict = readRawData(None)
 
-    # Notify for unrecognized raw data sections that were found.
-    for rawDataName in rawDict.keys():
-        if rawDataName not in rawDataSectionNames:
-            print "Unrecognized raw data section named \"" + rawDataName + "\""
-
-    # Notify for expected raw data sections that were expected but not found.
-    for rawDataName in rawDataSectionNames:
-        if rawDataName not in rawDict.keys():
-            print "Missing raw data section for \"" + rawDataName + "\""
-            rawDict[rawDataName] = ""
-
-    print "Interpreting data."
-
     # Interpret dmidecode first so the system will have a proper id.
+    print "Interpreting data."
     interpretDmidecodeSystem(rawDict, machine)
 
-    # Save a copy of all the raw data.
-    writeRawData(rawDict, machine['system id'].value() + '.txt')
+    # Construct a list of possible template choices.
+    templatePaths = ["" for _ in range(10)]
+    templatePaths = getTemplateFilePaths(templatePaths, ".")
+    templatePaths = getTemplateFilePaths(templatePaths, "/etc/lkm")
 
-    # Interpret all the rest of the raw data.
+    # Present user with menu of choices and get their selection.
+    print "\nChoose one of the following by pressing the [key] and then pressing Enter:"
+    for i in range(10):
+        if templatePaths[i] != "":
+            print "   [%d] Fill in template: " % i + templatePaths[i]
+    print "   [d] Display processed data in terminal."
+    print "   [r] Redirect raw data to text file"
+    print "   [q] Quit"
+    choice = raw_input("Your choice: ")
+
+    # Process the action the user selected.
+    if choice in [str(i) for i in range(10)]:
+        if templatePaths[int(choice)] == "":
+            print "Template #" + choice + " could not be found."
+        else:
+            interpretRawData(rawDict, machine)
+            print "Populating template..."
+            writeLibreOfficeFile(machine, templatePaths[int(choice)])
+    elif choice == 'd':
+        interpretRawData(rawDict, machine)
+        printBuildSheet(machine)
+    elif choice == 'r':
+        # Save a copy of all the raw data.
+        nameOfRawDataFile = machine['system id'].value() + '.txt'
+        print "Creating raw data file: " + nameOfRawDataFile
+        writeRawData(rawDict, nameOfRawDataFile)
+    elif choice == 'q':
+        print "Quitting.\n"
+        exit(0)
+    else:
+        print "Unrecognized choice. Goodbye."
+    print
+
+
+def interpretRawData(rawDict, machine):
     interpretCPUFreq(rawDict, machine)
     interpretDmidecodeMemory(rawDict, machine)
     interpretDmidecodeProcessor(rawDict, machine)
@@ -861,12 +886,20 @@ def main():
     if debugMode:
         dumpCaptureFailures()
 
-    # Output our program's findings.
-    print  # Blank line
-    printBuildSheet(machine)
-    print
-    writeLibreOfficeFile(machine, 'template, laptop build.ods')
-    writeLibreOfficeFile(machine, 'template, laptop as-is.ods', "as-is, " + machine['system id'].value() + '.ods')
-    print
+
+def getTemplateFilePaths(fileList, targetPath):
+    # Get contents of specified directory.
+    try:
+        dirContents = os.listdir(targetPath)
+    except OSError:
+        print "Warning: Unable to read directory " + targetPath
+        return fileList
+
+    # For every item that starts with "template-" followed by a number...
+    for item in os.listdir(targetPath):
+        if item[:9] == "template-" and item[9] in [str(i) for i in range(10)]:
+            if fileList[int(item[9])] == "":
+                fileList[int(item[9])] = targetPath + '/' + item
+    return fileList
 
 main()

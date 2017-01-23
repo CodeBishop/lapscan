@@ -756,7 +756,7 @@ def main():
     # Output our program's findings.
     print  # Blank line
     printBuildSheet(machine)
-    writeODSFile(machine, 'template, laptop build.ods')
+    writeODSFile(machine, 'template-0-laptop-build.ods')
 
 
 try:
