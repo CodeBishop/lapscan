@@ -167,7 +167,7 @@ def main():
         rawDict = readRawData(None)
 
     # Interpret dmidecode first so the system will have a proper id.
-    print "Interpreting data."
+    print "Constructing system ID."
     interpretDmidecodeSystem(rawDict, machine)
 
     # Construct a list of possible template choices.
@@ -192,7 +192,9 @@ def main():
         else:
             interpretRawData(rawDict, machine)
             print "Populating template..."
-            writeLibreOfficeFile(machine, templatePaths[int(choice)])
+            outputFilePath = writeLibreOfficeFile(machine, templatePaths[int(choice)])
+            subprocess.Popen(["sudo", "libreoffice", outputFilePath], stdout=subprocess.PIPE, stderr=DEVNULL)
+            # terminalCommand("libreoffice " + outputFilePath)
     elif choice == 'd':
         interpretRawData(rawDict, machine)
         printBuildSheet(machine)
@@ -853,10 +855,9 @@ def terminalCommand(command):
     return output
 
 
-# Fill-in a build sheet given a template in Libre Office format (.ods, .odt, ...).
-def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
-    if not outputFilename:
-        outputFilename = mach['system id'].value() + '.ods'
+# Fill-in a build sheet given a template in Libre Office format (.ods, .odt, ...), return path to tmp file.
+def writeLibreOfficeFile(mach, templateFilename):
+    outputFilePath = "/tmp/" + mach['system id'].value()
 
     # Attempt to open the template file.
     try:
@@ -868,7 +869,7 @@ def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
         print "Unable to recognize LibreOffice format in template file: " + templateFilename
         return
 
-    odsOutput = zipfile.ZipFile(outputFilename, 'w')
+    odsOutput = zipfile.ZipFile(outputFilePath, 'w')
     for fileHandle in odsInput.infolist():
         fileData = odsInput.read(fileHandle.filename)
         if fileHandle.filename == 'content.xml':
@@ -879,9 +880,7 @@ def writeLibreOfficeFile(mach, templateFilename, outputFilename=None):
     odsOutput.close()
     odsInput.close()
 
-    # If operating as super-user then ensure that output file will be writeable by regular users.
-    if os.geteuid() == 0:
-        terminalCommand("chmod 0777 " + outputFilename)  # Ensure ODS file is writeable.
+    return outputFilePath
 
 
 # Copy out raw data taken from terminal command output to a text file compendium.
