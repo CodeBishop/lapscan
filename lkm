@@ -633,7 +633,7 @@ def printBuildSheet(mach):
             opticalDescription += mach['dvdram'].value() + ' '
 
     if mach['wifi make'].status() == FIELD_HAS_DATA:
-        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + '802.11 ' \
+        wifiDescription = mach['wifi make'].value() + ' ' + mach['wifi model'].value() + ' 802.11 ' \
             + mach['wifi modes'].value()
     else:
         wifiDescription = dataNotFoundMessage
