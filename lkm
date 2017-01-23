@@ -137,6 +137,78 @@ rawDataSectionNames = [
 captureFailures = list()
 
 
+# Do stuff.
+def main():
+    # Initialize an empty machine description.
+    machine = dict()
+    for fieldName in fieldNames:
+        machine[fieldName] = Field(fieldName)
+
+    # Process command line arguments and fetch raw data filename if one was given.
+    rawFileToLoad = processCommandLineArguments()
+
+    # Hide traceback dump unless in debug mode.
+    if not debugMode:
+        sys.tracebacklimit = 0
+
+    # If a raw data file has been specified then load it.
+    if rawFileToLoad:
+        rawDict = readRawData(rawFileToLoad)
+    # Else, read raw data from this machine.
+    else:
+        # Attempt to call dmidecode in order to establish superuser privilege.
+        try:
+            proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
+            proc.wait()
+        except KeyboardInterrupt:
+            assert False, "Cannot proceed without root authority."
+
+        # Order the acquisition of the raw data from this machine.
+        rawDict = readRawData(None)
+
+    # Interpret dmidecode first so the system will have a proper id.
+    print "Interpreting data."
+    interpretDmidecodeSystem(rawDict, machine)
+
+    # Construct a list of possible template choices.
+    templatePaths = ["" for _ in range(10)]
+    templatePaths = getTemplateFilePaths(templatePaths, ".")
+    templatePaths = getTemplateFilePaths(templatePaths, "/etc/lkm")
+
+    # Present user with menu of choices and get their selection.
+    print "\nChoose one of the following by pressing the [key] and then pressing Enter:"
+    for i in range(10):
+        if templatePaths[i] != "":
+            print "   [%d] Fill in template: " % i + templatePaths[i]
+    print "   [d] Display processed data in terminal."
+    print "   [r] Redirect raw data to text file"
+    print "   [q] Quit"
+    choice = raw_input("Your choice: ")
+
+    # Process the action the user selected.
+    if choice in [str(i) for i in range(10)]:
+        if templatePaths[int(choice)] == "":
+            print "Template #" + choice + " could not be found."
+        else:
+            interpretRawData(rawDict, machine)
+            print "Populating template..."
+            writeLibreOfficeFile(machine, templatePaths[int(choice)])
+    elif choice == 'd':
+        interpretRawData(rawDict, machine)
+        printBuildSheet(machine)
+    elif choice == 'r':
+        # Save a copy of all the raw data.
+        nameOfRawDataFile = machine['system id'].value() + '.txt'
+        print "Creating raw data file: " + nameOfRawDataFile
+        writeRawData(rawDict, nameOfRawDataFile)
+    elif choice == 'q':
+        print "Quitting.\n"
+        exit(0)
+    else:
+        print "Unrecognized choice. Goodbye."
+    print
+
+
 # Use a regular expression to capture part of a string or return MISSING_FIELD if unable.
 def capture(pattern, text, failureAction=RECORD_CAPTURE_FAILURE):
     result = re.search(pattern, text)
@@ -149,6 +221,7 @@ def capture(pattern, text, failureAction=RECORD_CAPTURE_FAILURE):
         return MISSING_FIELD
 
 
+# Output debugging information about any capture() calls that failed to find their target data.
 def dumpCaptureFailures():
     for (caller, pattern, text) in captureFailures:
         # Eliminate excess whitespace and newlines from descriptions of searched text.
@@ -159,6 +232,23 @@ def dumpCaptureFailures():
         print "capture() failed to match: r\"" + pattern + "\""
         print "   in string: " + text
         print "   when called by: " + caller + "()" + "\n"
+
+
+# Scan a given directory for template files and place them in an indexed list if found.
+def getTemplateFilePaths(fileList, targetPath):
+    # Get contents of specified directory.
+    try:
+        dirContents = os.listdir(targetPath)
+    except OSError:
+        print "Warning: Unable to read directory " + targetPath
+        return fileList
+
+    # For every item that starts with "template-" followed by a number...
+    for item in os.listdir(targetPath):
+        if item[:9] == "template-" and item[9] in [str(i) for i in range(10)]:
+            if fileList[int(item[9])] == "":
+                fileList[int(item[9])] = targetPath + '/' + item
+    return fileList
 
 
 # Interpret the CPU frequency if the raw data is present.
@@ -443,6 +533,23 @@ def interpretLSUSB(rawDict, mach):
 
     # Grab the description of any lsusb line with "bluetooth" in it.
     mach["bluetooth model"].setValue(capture(r"(?i)Bus.*[0-9a-f]{4}:[0-9a-f]{4} (.*bluetooth.*)\n", rawDict['lsusb']))
+
+
+# Interpret all the collected raw data.
+def interpretRawData(rawDict, machine):
+    interpretCPUFreq(rawDict, machine)
+    interpretDmidecodeMemory(rawDict, machine)
+    interpretDmidecodeProcessor(rawDict, machine)
+    interpretGetconf(rawDict, machine)
+    interpretHdparm(rawDict, machine)
+    interpretLSBRelease(rawDict, machine)
+    interpretLSHW(rawDict, machine)
+    interpretLSUSB(rawDict, machine)
+    interpretUPower(rawDict, machine)
+
+    # If debugging then dump info about failed regex matches.
+    if debugMode:
+        dumpCaptureFailures()
 
 
 # Interpret "upower --dump" output.
@@ -796,110 +903,5 @@ def writeRawData(rawDict, filePath):
     rawFile.close()
     terminalCommand("chmod 0777 " + filePath)  # Ensure raw file can be overwritten later.
 
-
-# # ***************************************************************************************
-# # *******************************  START OF MAIN ****************************************
-# # ***************************************************************************************
-def main():
-    # Initialize an empty machine description.
-    machine = dict()
-    for fieldName in fieldNames:
-        machine[fieldName] = Field(fieldName)
-
-    # Process command line arguments and fetch raw data filename if one was given.
-    rawFileToLoad = processCommandLineArguments()
-
-    # Hide traceback dump unless in debug mode.
-    if not debugMode:
-        sys.tracebacklimit = 0
-
-    # If a raw data file has been specified then load it.
-    if rawFileToLoad:
-        rawDict = readRawData(rawFileToLoad)
-    # Else, read raw data from this machine.
-    else:
-        # Attempt to call dmidecode in order to establish superuser privilege.
-        try:
-            proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
-            proc.wait()
-        except KeyboardInterrupt:
-            assert False, "Cannot proceed without root authority."
-
-        # Order the acquisition of the raw data from this machine.
-        rawDict = readRawData(None)
-
-    # Interpret dmidecode first so the system will have a proper id.
-    print "Interpreting data."
-    interpretDmidecodeSystem(rawDict, machine)
-
-    # Construct a list of possible template choices.
-    templatePaths = ["" for _ in range(10)]
-    templatePaths = getTemplateFilePaths(templatePaths, ".")
-    templatePaths = getTemplateFilePaths(templatePaths, "/etc/lkm")
-
-    # Present user with menu of choices and get their selection.
-    print "\nChoose one of the following by pressing the [key] and then pressing Enter:"
-    for i in range(10):
-        if templatePaths[i] != "":
-            print "   [%d] Fill in template: " % i + templatePaths[i]
-    print "   [d] Display processed data in terminal."
-    print "   [r] Redirect raw data to text file"
-    print "   [q] Quit"
-    choice = raw_input("Your choice: ")
-
-    # Process the action the user selected.
-    if choice in [str(i) for i in range(10)]:
-        if templatePaths[int(choice)] == "":
-            print "Template #" + choice + " could not be found."
-        else:
-            interpretRawData(rawDict, machine)
-            print "Populating template..."
-            writeLibreOfficeFile(machine, templatePaths[int(choice)])
-    elif choice == 'd':
-        interpretRawData(rawDict, machine)
-        printBuildSheet(machine)
-    elif choice == 'r':
-        # Save a copy of all the raw data.
-        nameOfRawDataFile = machine['system id'].value() + '.txt'
-        print "Creating raw data file: " + nameOfRawDataFile
-        writeRawData(rawDict, nameOfRawDataFile)
-    elif choice == 'q':
-        print "Quitting.\n"
-        exit(0)
-    else:
-        print "Unrecognized choice. Goodbye."
-    print
-
-
-def interpretRawData(rawDict, machine):
-    interpretCPUFreq(rawDict, machine)
-    interpretDmidecodeMemory(rawDict, machine)
-    interpretDmidecodeProcessor(rawDict, machine)
-    interpretGetconf(rawDict, machine)
-    interpretHdparm(rawDict, machine)
-    interpretLSBRelease(rawDict, machine)
-    interpretLSHW(rawDict, machine)
-    interpretLSUSB(rawDict, machine)
-    interpretUPower(rawDict, machine)
-
-    # If debugging then dump info about failed regex matches.
-    if debugMode:
-        dumpCaptureFailures()
-
-
-def getTemplateFilePaths(fileList, targetPath):
-    # Get contents of specified directory.
-    try:
-        dirContents = os.listdir(targetPath)
-    except OSError:
-        print "Warning: Unable to read directory " + targetPath
-        return fileList
-
-    # For every item that starts with "template-" followed by a number...
-    for item in os.listdir(targetPath):
-        if item[:9] == "template-" and item[9] in [str(i) for i in range(10)]:
-            if fileList[int(item[9])] == "":
-                fileList[int(item[9])] = targetPath + '/' + item
-    return fileList
 
 main()
