@@ -117,6 +117,10 @@ captureFailures = list()
 
 # Do stuff.
 def main():
+    if os.geteuid() != 0:
+        print "Please run this as root (sudo)"
+        sys.exit(1)
+
     # Initialize an empty machine description.
     machine = dict()
     for fieldName in fieldNames:
