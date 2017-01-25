@@ -140,7 +140,7 @@ def main():
     else:
         # Attempt to call dmidecode in order to establish superuser privilege.
         try:
-            proc = subprocess.Popen(["sudo", "dmidecode"], stdout=subprocess.PIPE)
+            proc = subprocess.Popen(["dmidecode"], stdout=subprocess.PIPE)
             proc.wait()
         except KeyboardInterrupt:
             assert False, "Cannot proceed without root authority."
@@ -176,7 +176,7 @@ def main():
             interpretRawData(rawDict, machine)
             print "Populating template..."
             outputFilePath = writeLibreOfficeFile(machine, templatePaths[int(choice)])
-            subprocess.Popen(["sudo", "libreoffice", outputFilePath], stdout=subprocess.PIPE, stderr=DEVNULL)
+            subprocess.Popen(["libreoffice", outputFilePath], stdout=subprocess.PIPE, stderr=DEVNULL)
 
     # Display the processed data in the terminal.
     elif choice == 'd':
@@ -858,7 +858,7 @@ def stripExcessWhitespace(string):
 
 # Get the output from a terminal command.
 def terminalCommand(command):
-    output, _ = subprocess.Popen(["sudo"] + command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
+    output, _ = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=DEVNULL).communicate()
     return output
 
 
