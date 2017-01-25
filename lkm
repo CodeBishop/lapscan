@@ -26,6 +26,7 @@ import inspect
 import math
 import zipfile
 
+VERSION = "1.0.0"
 FIRST_COL_WIDTH = 19  # Character width of first column when printing a build sheet to the console.
 COLOR_TO_USE = '\033[1m'
 COLOR_TO_REVERT_TO = '\033[0m'
@@ -117,17 +118,17 @@ captureFailures = list()
 
 # Do stuff.
 def main():
+    # Process command line arguments and fetch raw data filename if one was given.
+    rawFileToLoad = processCommandLineArguments()
+
     if os.geteuid() != 0:
         print "Please run this as root (sudo)"
-        sys.exit(1)
+        exit(1)
 
     # Initialize an empty machine description.
     machine = dict()
     for fieldName in fieldNames:
         machine[fieldName] = Field(fieldName)
-
-    # Process command line arguments and fetch raw data filename if one was given.
-    rawFileToLoad = processCommandLineArguments()
 
     # Hide traceback dump unless in debug mode.
     if not debugMode:
@@ -683,6 +684,9 @@ def processCommandLineArguments():
             skipLSHW = True
         elif item == "--help" or item == "-h":
             print helpScreenContents
+            exit(0)
+        elif item == "--version" or item == "-V":
+            print VERSION
             exit(0)
         elif item[0] == '-':
             assert False, "Unrecognized command option: \"" + item + "\""
