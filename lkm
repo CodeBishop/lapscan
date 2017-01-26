@@ -117,13 +117,17 @@ captureFailures = list()
 
 # Do stuff.
 def main():
+    # Process command line arguments and fetch raw data filename if one was given.
+    rawFileToLoad = processCommandLineArguments()
+
+    if os.geteuid() != 0:
+        print "Please run this as root (sudo)"
+        exit(1)
+
     # Initialize an empty machine description.
     machine = dict()
     for fieldName in fieldNames:
         machine[fieldName] = Field(fieldName)
-
-    # Process command line arguments and fetch raw data filename if one was given.
-    rawFileToLoad = processCommandLineArguments()
 
     # Hide traceback dump unless in debug mode.
     if not debugMode:
