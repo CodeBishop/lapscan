@@ -157,66 +157,66 @@ def main():
     templatePaths = getTemplateFilePaths(templatePaths, ".")
     templatePaths = getTemplateFilePaths(templatePaths, TEMPLATE_DIRECTORY)
 
-    # Present user with menu of choices and get their selection.
-    print "\nChoose one of the following by pressing the [key] and then pressing Enter:"
-    for i in range(10):
-        if templatePaths[i] != "":
-            print "   [%d] Fill in template: " % i + templatePaths[i]
-    print "   [d] Display processed data in terminal"
-    print "   [r] Redirect raw data to text file"
-    print "   [t] Template help"
-    print "   [q] Quit"
-    choice = raw_input("Your choice: ")
+    isRunning = True
+    while isRunning:
+        # Present user with menu of choices and get their selection.
+        print "\nChoose one of the following by pressing the [key] and then pressing Enter:"
+        for i in range(10):
+            if templatePaths[i] != "":
+                print "   [%d] Fill in template: " % i + templatePaths[i]
+        print "   [d] Display processed data in terminal"
+        print "   [r] Redirect raw data to text file"
+        print "   [t] Template help"
+        print "   [q] Quit"
+        choice = raw_input("Your choice: ")
 
-    # Process the action the user selected.
-    if choice in [str(i) for i in range(10)]:
-        if templatePaths[int(choice)] == "":
-            print "Template #" + choice + " could not be found."
-        else:
+        # Process the action the user selected.
+        if choice in [str(i) for i in range(10)]:
+            if templatePaths[int(choice)] == "":
+                print "Template #" + choice + " could not be found."
+            else:
+                interpretRawData(rawDict, machine)
+                print "Populating template..."
+                outputFilePath = writeLibreOfficeFile(machine, templatePaths[int(choice)])
+                subprocess.Popen(["sudo", "libreoffice", outputFilePath], stdout=subprocess.PIPE, stderr=DEVNULL)
+
+        # Display the processed data in the terminal.
+        elif choice == 'd':
             interpretRawData(rawDict, machine)
-            print "Populating template..."
-            outputFilePath = writeLibreOfficeFile(machine, templatePaths[int(choice)])
-            subprocess.Popen(["sudo", "libreoffice", outputFilePath], stdout=subprocess.PIPE, stderr=DEVNULL)
+            printBuildSheet(machine)
 
-    # Display the processed data in the terminal.
-    elif choice == 'd':
-        interpretRawData(rawDict, machine)
-        printBuildSheet(machine)
+        # Save a copy of all the raw data.
+        elif choice == 'r':
+            nameOfRawDataFile = machine['system id'].value() + '.txt'
+            print "Creating raw data file: " + nameOfRawDataFile
+            writeRawData(rawDict, nameOfRawDataFile)
 
-    # Save a copy of all the raw data.
-    elif choice == 'r':
-        nameOfRawDataFile = machine['system id'].value() + '.txt'
-        print "Creating raw data file: " + nameOfRawDataFile
-        writeRawData(rawDict, nameOfRawDataFile)
+        # Display a listing of all possible template fields and corresponding values.
+        elif choice == 't':
+            keyColumnWidth = 20
+            interpretRawData(rawDict, machine)
+            print "KEYS".rjust(keyColumnWidth), "RESULTS"
+            for key in fieldNames:
+                print ('{' + key + '}').rjust(keyColumnWidth), machine[key].value()
+            print "\nAbove is a list of all possible search-and-replace keys this program will seek in a template file " \
+                  "and the results column shows what that key would turn into on this machine. Some results are shown " \
+                  "blank because the program could not find useful data for those items.\n"
+            print "To create a new template you must meet the following conditions:"
+            print "   Your template must be in a LibreOffice format, such as spreadsheets (.ods) or documents (.odt)."
+            print "   Your template must put each key in {braces} for it to be replaced."
+            print "   Your template must be named and numbered as \"template-#...\""
+            print "      EXAMPLE: \"template-5-some-file-name.ods\"."
+            print "      Note that the number must be unique. Only the first template-# found will be shown in the menu."
+            print "   Your template must be in the current directory or in " + TEMPLATE_DIRECTORY
 
-    # Display a listing of all possible template fields and corresponding values.
-    elif choice == 't':
-        keyColumnWidth = 20
-        interpretRawData(rawDict, machine)
-        print "KEYS".rjust(keyColumnWidth), "RESULTS"
-        for key in fieldNames:
-            print ('{' + key + '}').rjust(keyColumnWidth), machine[key].value()
-        print "\nAbove is a list of all possible search-and-replace keys this program will seek in a template file " \
-              "and the results column shows what that key would turn into on this machine. Some results are shown " \
-              "blank because the program could not find useful data for those items.\n"
-        print "To create a new template you must meet the following conditions:"
-        print "   Your template must be in a LibreOffice format, such as spreadsheets (.ods) or documents (.odt)."
-        print "   Your template must put each key in {braces} for it to be replaced."
-        print "   Your template must be named and numbered as \"template-#...\""
-        print "      EXAMPLE: \"template-5-some-file-name.ods\"."
-        print "      Note that the number must be unique. Only the first template-# found will be shown in the menu."
-        print "   Your template must be in the current directory or in " + TEMPLATE_DIRECTORY
+        # Quit the program without doing anything.
+        elif choice == 'q':
+            print "Goodbye.\n"
+            isRunning = False
 
-    # Quit the program without doing anything.
-    elif choice == 'q':
-        print "Quitting.\n"
-        exit(0)
-
-    # Unrecognized choice just leads to an error message and exit.
-    else:
-        print "Unrecognized choice. Goodbye."
-
-    print  # Print a blank line before exiting.
+        # Unrecognized choice just leads to an error message and exit.
+        else:
+            print "Unrecognized choice."
 
 
 # Use a regular expression to capture part of a string or return MISSING_FIELD if unable.
